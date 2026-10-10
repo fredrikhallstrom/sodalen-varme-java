@@ -1,0 +1,48 @@
+plugins {
+    id 'java'
+}
+
+group = 'se.sodalen'
+version = '0.1'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+dependencies {
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testImplementation libs.junit.jupiter.params
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+// Testerna låses upp ett steg i taget. Varje steg är en mapp under steg/
+// med sina tester (java/) och sitt facit från Pythonversionen (resources/);
+// steg i gradle.properties säger hur många som är med.
+def steg = (project.findProperty('steg') ?: '1') as int
+def upplasta = file('steg').listFiles()
+        .findAll { it.directory && it.name ==~ /\d\d-.*/ && (it.name.take(2) as int) <= steg }
+        .sort { it.name }
+
+sourceSets {
+    test {
+        java.srcDirs += upplasta.collect { new File(it, 'java') }
+        resources.srcDirs += upplasta.collect { new File(it, 'resources') }
+    }
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'failed', 'skipped'
+        exceptionFormat 'full'
+    }
+    outputs.upToDateWhen { false }
+    doFirst { println("Steg 1-${steg}: ${upplasta*.name.join(', ')}") }
+}
