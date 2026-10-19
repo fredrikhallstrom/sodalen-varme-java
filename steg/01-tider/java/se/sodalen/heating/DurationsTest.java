@@ -108,6 +108,31 @@ class DurationsTest {
     }
 
     /**
+     * Seconds are hours over 3600 and then the same words: under an hour too,
+     * rounded rather than cut, and up into hours when the round gets there.
+     */
+    @Nested
+    class InSeconds {
+        @ParameterizedTest(name = "{0} s -> {1}")
+        @CsvSource(delimiter = ';', value = {
+            "2690.0;45 min",
+            "3540.0;59 min",
+            "1530.0;26 min",
+            "30.0;1 min",
+            "29.0;0 min",
+            "3570.0;1 h",
+            "3569.0;59 min",
+            "86400.0;1 dag",
+            "20000000.0;7,6 månader",
+            "0.0;0 min",
+            "-60.0;0 min",
+        })
+        void asPythonSaysThem(double seconds, String expected) {
+            assertEquals(expected, Durations.durationWordsSeconds(seconds));
+        }
+    }
+
+    /**
      * The decimal comma is the text's, not the computer's: sodalenserver may
      * well run with an English locale.
      */
