@@ -110,6 +110,8 @@ class DurationsTest {
     /**
      * Seconds are hours over 3600 and then the same words: under an hour too,
      * rounded rather than cut, and up into hours when the round gets there.
+     * Over an hour the hours come from the seconds, not from minutes already
+     * rounded: 4 499,64 s is 1,2499 h, but 75 whole minutes would be 1,25.
      */
     @Nested
     class InSeconds {
@@ -122,6 +124,10 @@ class DurationsTest {
             "29.0;0 min",
             "3570.0;1 h",
             "3569.0;59 min",
+            "4499.64;1,2 h",
+            "4500.0;1,3 h",
+            "35819.0;9,9 h",
+            "35820.0;10 h",
             "86400.0;1 dag",
             "20000000.0;7,6 månader",
             "0.0;0 min",
