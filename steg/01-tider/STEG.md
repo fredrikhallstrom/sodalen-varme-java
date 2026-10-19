@@ -31,7 +31,5 @@ public final class Durations {
 - **Byte av enhet efter avrundning:** 59,8 minuter avrundas till 60 och ska då
   sägas som "1 h".
 - **Singular:** bara exakt 1 ger "1 dag", "1 vecka" och "1 månad".
-- **Datorns språk:** `String.format` skriver med datorns språk, också `%d`.
-  På engelska blir decimaltecknet en punkt. På egyptisk arabiska blir det
-  andra siffror och ett eget decimaltecken (٢٫٥), som ingen `replace` rättar.
-  Ge formateringen ett fast språk.
+- **Datorns språk:** `String.format` skriver med datorns språk. På engelska
+  blir decimaltecknet en punkt, i alla enheter.
