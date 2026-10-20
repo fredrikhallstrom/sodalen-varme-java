@@ -60,7 +60,7 @@ höjer du siffran, och då kommer nästa stegs tester med. Varje stegmapp har:
 | 2 | PID, den inre loopen: tilloppsfel in, ventilläge ut | `pid.py` | tester klara |
 | 3 | Värmekurvan och EVR-skalan | `curve.py` | tester klara |
 | 4 | Ventilkartan: vilket läge ger vilket tillopp | `valvemap.py` | tester klara |
-| 5 | Kurvtabellen: lärda punkter per väder och tid på dygnet | `points.py` | |
+| 5 | Kurvtabellen: lärda punkter per väder och tid på dygnet | `points.py` | tester klara |
 | 6 | Skattarna: medelvärden och regression | `estimators.py` | |
 | 7 | Husmodellen: hur fort huset svalnar, och när vädret vänder | `thermal.py` | |
 | 8 | Prognosen: flera väderkällor vägda ihop | `forecast.py` | |

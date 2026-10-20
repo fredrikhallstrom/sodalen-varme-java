@@ -11,6 +11,7 @@ när Pythonversionen har ändrats - då visar testerna vad som skiljer.
 from __future__ import annotations
 
 import csv
+import math
 import random
 import shutil
 import sys
@@ -247,6 +248,84 @@ def valvemap(core, rng) -> None:
            "shadowSeconds"], rows)
 
 
+def points(core, rng) -> None:
+    pts = core.points
+
+    def hour():
+        """En tid på dygnet, ibland utanför 0-24 och ibland ingen klocka alls."""
+        return rng.choice([None, rng.uniform(0.0, 24.0), rng.uniform(0.0, 24.0), rng.uniform(-48.0, 72.0),
+                           float(rng.randint(-30, 54)),
+                           rng.choice([0.0, 6.0, 12.0, 18.0, 24.0, -6.0, -0.5, 5.999, 6.001, 23.999])])
+
+    def outdoor():
+        return rng.choice([rng.uniform(-35.0, 25.0), rng.uniform(-35.0, 25.0), float(rng.randint(-20, 15)),
+                           2.0 * rng.randint(-15, 10) + rng.choice([-1e-9, 0.0, 1e-9, 0.001, 1.999])])
+
+    rows = []
+    for _ in range(1500):
+        at, when = outdoor(), hour()
+        rows.append([at, when, pts.bin_index(at), pts.PointTable().key_at(at, when)])
+    write("05-kurvtabellen", "key_at.csv", ["outdoor", "hour", "binIndex", "key"], rows)
+
+    rows = []
+    for _ in range(400):
+        cell, ops = pts.Cell(), []
+        for _ in range(rng.randint(1, 15)):
+            if rng.random() < 0.3:
+                factor = rng.choice([rng.random(), 1.0, 0.0, 0.5])
+                hours = rng.choice([rng.uniform(0.0, 48.0), 0.0, 24.0])
+                cell.fade(factor, hours)
+                ops.append("fade," + _list([factor, hours]))
+            else:
+                need, at, wind = rng.uniform(-5.0, 50.0), rng.uniform(-30.0, 20.0), rng.uniform(0.0, 12.0)
+                hours = rng.choice([rng.uniform(0.01, 6.0), rng.uniform(0.01, 6.0), 1.0, 0.0, -1.0])
+                cell.add(need, at, wind, hours)
+                ops.append("add," + _list([need, at, wind, hours]))
+        rows.append(["|".join(ops), cell.weight, cell.mean, cell.m2, cell.outdoor, cell.wind, cell.age])
+    write("05-kurvtabellen", "cell.csv", ["ops", "weight", "mean", "m2", "outdoor", "wind", "age"], rows)
+
+    rows = []
+    for _ in range(600):
+        table, ops, centre = pts.PointTable(), [], rng.uniform(-20.0, 12.0)
+        for _ in range(rng.randint(0, 60)):
+            r = rng.random()
+            if r < 0.08:
+                hours = rng.choice([rng.uniform(0.0, 72.0), 0.0, -1.0, 60 * 24.0])
+                half = rng.choice([60 * 24.0, 24.0, 0.0, -5.0, rng.uniform(1.0, 2000.0), 1e-3])
+                table.fade(hours, half)
+                ops.append("fade," + _list([hours, half]))
+            elif r < 0.10:
+                table.clear()
+                ops.append("clear")
+            else:
+                at = rng.choice([centre + rng.uniform(-3.0, 3.0)] * 30 + [math.nan, math.inf, -math.inf])
+                need = rng.choice([25.0 - 0.9 * at + rng.gauss(0.0, 2.0)] * 30 + [math.nan, math.inf, -math.inf])
+                wind = None if rng.random() < 0.1 else rng.choice([rng.uniform(0.0, 10.0), -rng.uniform(0.0, 3.0)])
+                when = hour()
+                hours = rng.choice([rng.uniform(0.05, 3.0), rng.uniform(0.05, 3.0), 0.25, 1.0, 6.0, 0.0, -0.5])
+                table.add(outdoor=at, need=need, wind=wind, hour=when, hours=hours)
+                ops.append("add," + _list([at, need, wind, when, hours]))
+        if rng.random() < 0.5:
+            rules, made = pts.Rules(), True
+        else:
+            rules, made = pts.Rules(red_hours=rng.uniform(0.0, 6.0), green_hours=rng.uniform(6.0, 48.0),
+                                    green_spread=rng.uniform(0.3, 3.0), green_sectors=rng.randint(1, 4),
+                                    sector_hours=rng.choice([0.0, 1.0, rng.uniform(0.2, 5.0)])), False
+        bins = table.bins(rules)
+        queries = [(centre + rng.uniform(-4.0, 4.0), hour()) for _ in range(6)]
+        rows.append(["|".join(ops), str(made).lower(),
+                     _list([rules.red_hours, rules.green_hours, rules.green_spread, rules.green_sectors,
+                            rules.sector_hours]),
+                     "|".join(_list([b.outdoor, b.need, b.hours, b.spread, b.sectors, b.wind, b.age, b.weight])
+                              for b in bins),
+                     ",".join(b.status for b in bins),
+                     "|".join(_list(q) for q in queries),
+                     _list(table.hours_at(*q) for q in queries),
+                     ",".join(table.key_at(*q) for q in queries)])
+    write("05-kurvtabellen", "point_table.csv",
+          ["ops", "defaultRules", "rules", "bins", "statuses", "queries", "hoursAt", "keys"], rows)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -258,8 +337,9 @@ def main() -> int:
     pid(core, rng)
     curve(core, rng)
     valvemap(core, rng)
+    points(core, rng)
     for step, module in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
-                         ("04-ventilkartan", "valvemap")):
+                         ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points")):
         copy_source(heating, step, module)
     return 0
 
