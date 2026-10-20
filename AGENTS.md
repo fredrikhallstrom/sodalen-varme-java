@@ -37,7 +37,10 @@ Python version lives (`heating/`); read it when you need the original.
    Then break the reference the way a translation goes wrong (integer
    division, `(int)` for `Math.floor`, `round` for banker's rounding, the
    default locale, a missing null) and see a test fail each time.
-5. A step is unlocked by `steg=N` in `gradle.properties`, which is his to
+5. The step's comparison with the answer files is a `@Nested` class
+   `SameAsPython` marked `@Tag("python")`, so that `./gradlew utanPython`
+   (and the IntelliJ run configuration in `.run/`) leaves it out.
+6. A step is unlocked by `steg=N` in `gradle.properties`, which is his to
    raise.
 
 When the Python version of a step he has done changes, rerun `facit.py`,

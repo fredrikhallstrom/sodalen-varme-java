@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvFileSource;
@@ -189,6 +190,7 @@ class DurationsTest {
 
     /** 2000 cases worked out by the Python version (verktyg/facit.py). */
     @Nested
+    @Tag("python")
     class SameAsPython {
         @ParameterizedTest(name = "{0} h -> {1}")
         @CsvFileSource(resources = "/durations.csv", delimiter = ';', numLinesToSkip = 1)

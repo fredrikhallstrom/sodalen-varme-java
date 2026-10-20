@@ -37,12 +37,29 @@ sourceSets {
     }
 }
 
-test {
-    useJUnitPlatform()
+tasks.withType(Test).configureEach {
     testLogging {
         events 'failed', 'skipped'
         exceptionFormat 'full'
     }
     outputs.upToDateWhen { false }
     doFirst { println("Steg 1-${steg}: ${upplasta*.name.join(', ')}") }
+}
+
+test {
+    useJUnitPlatform()
+}
+
+// Allt utom jämförelserna med Python (SameAsPython, @Tag("python")). De
+// egna testerna säger vad som är fel med ett fall i taget; börja här och ta
+// de tusentals Pythonfallen när de är gröna. I IntelliJ: körkonfigurationen
+// "Tester utan SameAsPython" (.run/).
+tasks.register('utanPython', Test) {
+    description = 'Stegens tester utom SameAsPython.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        excludeTags 'python'
+    }
 }

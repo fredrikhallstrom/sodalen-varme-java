@@ -22,11 +22,18 @@ jämförs med Pythonversionen, utan att styra något.
 ## Kör
 
 ```
-./gradlew test
+./gradlew utanPython    # allt utom SameAsPython: börja här
+./gradlew test          # allt, med de tusentals Pythonfallen
 ```
 
 I IntelliJ: öppna mappen som Gradle-projekt. `steg/*/java` blir testmappar
 av sig själva, och du kan köra ett test eller en `@Nested`-grupp i taget.
+Körkonfigurationen **Tester utan SameAsPython** (i listan uppe till höger)
+kör `utanPython`.
+
+`SameAsPython` jämför med Pythonversionen i tusentals fall och är märkt
+`@Tag("python")`. De egna testerna säger vad som är fel ett fall i taget, så
+ta dem först och Pythonfallen när de är gröna.
 
 Första gången blir det **kompileringsfel**. Det är det första röda: testerna
 frågar efter klasser som inte finns än. Skapa dem (Alt+Enter på det röda

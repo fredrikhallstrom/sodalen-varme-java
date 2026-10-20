@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvFileSource;
@@ -219,6 +220,7 @@ class PidTest {
 
     /** 2000 + 300 cases worked out by the Python version (verktyg/facit.py). */
     @Nested
+    @Tag("python")
     class SameAsPython {
         static final double CLOSE = 1e-9;
 
