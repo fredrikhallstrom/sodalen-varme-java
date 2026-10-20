@@ -111,6 +111,142 @@ def curve(core, rng) -> None:
           ["room", "designOutdoor", "slope", "balance", "curvature", "reference", "expected"], mid)
 
 
+def _num(value) -> str:
+    return "" if value is None else repr(float(value))
+
+
+def _list(values) -> str:
+    return ",".join(_num(v) for v in values)
+
+
+def _segments(segments) -> str:
+    """Avläsningar som "läge,tillopp,retur,panna,dt,antal" med | emellan: samma
+    avläsning antal gånger i rad, som när ventilen står still. Tomt = None."""
+    return "|".join(_list(s[:5]) + "," + str(s[5]) for s in segments)
+
+
+def valvemap(core, rng) -> None:
+    ValveMap = core.valvemap.ValveMap
+
+    def made():
+        if rng.random() < 0.5:
+            return ValveMap()
+        return ValveMap(horizon_seconds=rng.uniform(3600.0, 60 * 24 * 3600.0),
+                        settle_seconds=rng.choice([0.0, 300.0, rng.uniform(10.0, 900.0)]),
+                        min_lift=rng.choice([0.0, 15.0, rng.uniform(1.0, 30.0)]),
+                        min_band_seconds=rng.choice([0.0, 1800.0, rng.uniform(60.0, 3600.0)]))
+
+    def settings(valve):
+        return [valve.horizon_seconds, valve.settle_seconds, valve.min_lift, valve.min_band_seconds]
+
+    def replay(valve, segments):
+        last = []
+        for position, flow, ret, boiler, dt, count in segments:
+            learned = None
+            for _ in range(count):
+                learned = valve.observe(position, flow, ret, boiler, dt)
+            last.append(learned)
+        return last
+
+    def wandering():
+        """En ventil som rör sig hit och dit, med luckor i avläsningarna."""
+        segments, position = [], rng.choice([0.0, 12.5, 22.5, 50.0, rng.uniform(-5.0, 105.0)])
+        for _ in range(rng.randint(1, 12)):
+            if rng.random() < 0.1:
+                at = None
+            else:
+                position += rng.choice([0.0, 0.0, 0.3, -0.3, 0.5, -0.5, 0.6, -0.6, rng.uniform(-30.0, 30.0)])
+                at = position
+            ret = None if rng.random() < 0.05 else rng.uniform(20.0, 45.0)
+            boiler = None if rng.random() < 0.05 else (ret or 30.0) + rng.uniform(-5.0, 60.0)
+            share = rng.uniform(-0.2, 1.3)
+            flow = None if rng.random() < 0.05 else (ret or 30.0) + share * ((boiler or 70.0) - (ret or 30.0))
+            dt = rng.choice([30.0, 30.0, 30.0, 0.0, -5.0, rng.uniform(1.0, 120.0)])
+            segments.append((at, flow, ret, boiler, dt, rng.choice([1, 2, 5, 10, 11, 30, rng.randint(1, 200)])))
+        return segments
+
+    def taught(valve):
+        """En karta som lärt sig en ventil band för band, som i huset."""
+        shape = rng.choice([lambda p: p / 100.0, lambda p: (p / 100.0) ** 2, lambda p: 0.004 + 0.4 * (p / 50.0) ** 1.8])
+        noise = rng.choice([0.0, 0.01, 0.05])
+        segments = []
+        for p in sorted(rng.sample(range(0, 105, 5), rng.randint(0, 14))):
+            ret = rng.uniform(22.0, 40.0)
+            boiler = ret + rng.uniform(16.0, 60.0)
+            share = shape(p) + rng.uniform(-noise, noise)
+            seconds = rng.choice([300.0, 600.0, 900.0, 1800.0, 2400.0, 3600.0, 7200.0]) + valve.settle_seconds
+            segments.append((float(p), ret + share * (boiler - ret), ret, boiler, 30.0, int(seconds / 30.0) + 1))
+        return segments
+
+    rows = []
+    for _ in range(500):
+        valve = made()
+        segments = wandering()
+        last = replay(valve, segments)
+        rows.append(settings(valve) + [_segments(segments), _list(last), str(valve.settled()).lower(),
+                                       _list(valve.share), _list(valve.weight)])
+    write("04-ventilkartan", "observe.csv",
+          ["horizonSeconds", "settleSeconds", "minLift", "minBandSeconds", "segments", "learned", "settled",
+           "share", "weight"], rows)
+
+    rows = []
+    for _ in range(300):
+        valve = made()
+        segments = taught(valve)
+        replay(valve, segments)
+        valve.fill_prior()
+        rows.append(settings(valve) + [_segments(segments), _list(valve.share), _list(valve.weight)])
+    write("04-ventilkartan", "fill_prior.csv",
+          ["horizonSeconds", "settleSeconds", "minLift", "minBandSeconds", "segments", "share", "weight"], rows)
+
+    rows = []
+    for _ in range(500):
+        valve = made()
+        segments = taught(valve)
+        replay(valve, segments)
+        filled = rng.random() < 0.4
+        if filled:
+            valve.fill_prior()
+        known = valve.known()
+        asked, answers = [], []
+        for _ in range(6):
+            ret = None if rng.random() < 0.05 else rng.uniform(20.0, 40.0)
+            boiler = None if rng.random() < 0.05 else (ret or 30.0) + rng.uniform(0.0, 60.0)
+            wanted = rng.uniform(-0.1, 1.1)
+            flow = None if rng.random() < 0.05 else (ret or 30.0) + wanted * ((boiler or 70.0) - (ret or 30.0))
+            asked.append((flow, ret, boiler))
+            answers.append(valve.position_for(flow, ret, boiler))
+        gains, gained = [], []
+        for _ in range(6):
+            position = None if rng.random() < 0.05 else rng.choice([rng.uniform(-5.0, 105.0), 2.5 * rng.randint(0, 40)])
+            lift = None if rng.random() < 0.05 else rng.choice([rng.uniform(0.0, 70.0), 15.0, 50.0])
+            gains.append((position, lift))
+            gained.append(valve.gain_at(position, lift))
+        rows.append(settings(valve) + [_segments(segments), str(filled).lower(),
+                                       _list(p for p, _ in known), _list(s for _, s in known),
+                                       "|".join(_list(q) for q in asked), _list(answers),
+                                       "|".join(_list(q) for q in gains), _list(gained)])
+    write("04-ventilkartan", "predict.csv",
+          ["horizonSeconds", "settleSeconds", "minLift", "minBandSeconds", "segments", "filled",
+           "knownPositions", "knownShares", "positionQueries", "positions", "gainQueries", "gains"], rows)
+
+    rows = []
+    for _ in range(300):
+        valve = made()
+        scores = []
+        for _ in range(rng.randint(1, 20)):
+            predicted = None if rng.random() < 0.1 else rng.uniform(0.0, 100.0)
+            actual = None if rng.random() < 0.1 else rng.uniform(0.0, 100.0)
+            dt = rng.choice([30.0, 60.0, 0.0, -1.0, rng.uniform(1.0, 7200.0)])
+            scores.append((predicted, actual, dt))
+            valve.score(predicted, actual, dt)
+        rows.append(settings(valve) + ["|".join(_list(s) for s in scores),
+                                       _num(valve.shadow_error), _num(valve.shadow_seconds)])
+    write("04-ventilkartan", "score.csv",
+          ["horizonSeconds", "settleSeconds", "minLift", "minBandSeconds", "scores", "shadowError",
+           "shadowSeconds"], rows)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -121,7 +257,9 @@ def main() -> int:
     durations(core, rng)
     pid(core, rng)
     curve(core, rng)
-    for step, module in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve")):
+    valvemap(core, rng)
+    for step, module in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
+                         ("04-ventilkartan", "valvemap")):
         copy_source(heating, step, module)
     return 0
 

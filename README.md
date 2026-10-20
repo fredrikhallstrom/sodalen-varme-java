@@ -9,7 +9,7 @@ jämförs med Pythonversionen, utan att styra något.
 ## Arbetsgången
 
 - **Du skriver all kod** under `src/main/java/se/sodalen/heating/`.
-  Varje del har sitt eget paket (`helper`, `pid`, `curve` ...). Testet ligger
+  Varje del har sitt eget paket (`helper`, `pid`, `curve`, `valve` ...). Testet ligger
   i samma paket som klassen det provar, och stegets `STEG.md` säger vilket.
 - **Testerna skrivs åt dig**, ett steg i taget, under `steg/NN-namn/java/`.
   De är översatta från Pythonversionens tester. Där sådana saknas är de
@@ -57,7 +57,7 @@ höjer du siffran, och då kommer nästa stegs tester med. Varje stegmapp har:
 | 1 | Tider i ord: "45 min", "1,9 veckor" | `durations.py` | tester klara |
 | 2 | PID, den inre loopen: tilloppsfel in, ventilläge ut | `pid.py` | tester klara |
 | 3 | Värmekurvan och EVR-skalan | `curve.py` | tester klara |
-| 4 | Ventilkartan: vilket läge ger vilket tillopp | `valvemap.py` | |
+| 4 | Ventilkartan: vilket läge ger vilket tillopp | `valvemap.py` | tester klara |
 | 5 | Kurvtabellen: lärda punkter per väder och tid på dygnet | `points.py` | |
 | 6 | Skattarna: medelvärden och regression | `estimators.py` | |
 | 7 | Husmodellen: hur fort huset svalnar, och när vädret vänder | `thermal.py` | |
