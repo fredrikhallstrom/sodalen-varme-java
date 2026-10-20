@@ -9,6 +9,8 @@ kurvkortet (JavaScript).
 ## Testerna väntar sig
 
 ```java
+package se.sodalen.heating.helper;
+
 public final class Durations {
     public static String durationWords(Double hours)          // null -> "–"
     public static String durationWordsSeconds(Double seconds)

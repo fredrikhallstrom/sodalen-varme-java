@@ -22,6 +22,8 @@ igen.
 ## Testerna väntar sig
 
 ```java
+package se.sodalen.heating.curve;
+
 public final class Curve {
     public static final List<Double> EVR_RISE     // 0.42, 0.58, 0.74, 0.91, 1.32, 1.74, 2.24, 2.73
     public static double supply(double outdoor, double room, double designOutdoor,

@@ -23,6 +23,8 @@ byter tecken.
 ## Testerna väntar sig
 
 ```java
+package se.sodalen.heating.pid;
+
 public record PidGains(double kp, double ti, double td, double deadband, double outMin, double outMax)
     // plus en konstruktor PidGains(kp, ti, td): dödband 0, gränser 0-100
 

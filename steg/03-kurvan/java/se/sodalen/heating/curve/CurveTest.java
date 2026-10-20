@@ -1,4 +1,4 @@
-package se.sodalen.heating;
+package se.sodalen.heating.curve;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;

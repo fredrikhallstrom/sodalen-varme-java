@@ -16,6 +16,10 @@ Python version lives (`heating/`); read it when you need the original.
   (`java/` with the tests, `resources/` with the answer files, `STEG.md`,
   and the Python file the step translates), `build.gradle`, `gradle/`,
   `verktyg/` and the docs.
+- **One package per part** under `se.sodalen.heating` (`helper`, `pid`,
+  `curve`; Fredrik's choice). A step's tests live in the package of the
+  class they test, and its `STEG.md` names that package. Ask him which
+  package a new part goes in before writing its tests.
 - **A test is not changed to make code pass.** If Fredrik thinks a test is
   wrong, look at it with him; it may be.
 

@@ -9,6 +9,8 @@ jämförs med Pythonversionen, utan att styra något.
 ## Arbetsgången
 
 - **Du skriver all kod** under `src/main/java/se/sodalen/heating/`.
+  Varje del har sitt eget paket (`helper`, `pid`, `curve` ...). Testet ligger
+  i samma paket som klassen det provar, och stegets `STEG.md` säger vilket.
 - **Testerna skrivs åt dig**, ett steg i taget, under `steg/NN-namn/java/`.
   De är översatta från Pythonversionens tester. Där sådana saknas är de
   skrivna utifrån koden, och alla är kontrollerade mot en referenslösning.
