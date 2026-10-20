@@ -85,6 +85,37 @@ class CurveTest {
     }
 
     /**
+     * The span (room - design_outdoor) and the reach (balance - design_outdoor)
+     * are never taken as less than one degree: max(1.0, ...) in Python. A
+     * balance at the design cold would otherwise divide by nought, and one
+     * below it would turn the share negative and the curve flat.
+     */
+    @Nested
+    class NearTheDesignCold {
+        @Test
+        void aBalanceAtTheDesignColdIsNoDivisionByNought() {
+            assertEquals(21.0 + 0.9 * 39.0, Curve.supply(-19.0, 21.0, -18.0, 0.9, 0.8, -18.0), 1e-9);
+        }
+
+        @Test
+        void aBalanceLessThanADegreeAboveItCountsAsOneDegree() {
+            assertEquals(21.0 + 0.9 * 39.0 * Math.pow(0.5, 0.8),
+                    Curve.supply(-18.0, 21.0, -18.0, 0.9, 0.8, -17.5), 1e-9);
+        }
+
+        @Test
+        void aBalanceBelowItStillRisesWithTheCold() {
+            assertEquals(21.0 + 0.9 * 39.0 * Math.pow(5.0, 0.8),
+                    Curve.supply(-25.0, 21.0, -18.0, 0.9, 0.8, -20.0), 1e-9);
+        }
+
+        @Test
+        void aRoomLessThanADegreeAboveItIsADegreeOfSpan() {
+            assertEquals(-17.5 + 0.9 * 1.0, Curve.supply(-18.0, -17.5, -18.0, 0.9, 0.8, 10.0), 1e-9);
+        }
+    }
+
+    /**
      * The curve numbers on the EVR controller's curve map, read off the one on
      * the boiler room wall: straight lines from 20 supply at +20 outside.
      */

@@ -6,9 +6,10 @@
 Hur varmt tilloppet ska vara vid en viss utetemperatur:
 
 ```
-tillopp = rum + lutning * spann * B ^ böjning
-B       = (balans - ute) / (balans - dimensionerande ute), aldrig under 0
-spann   = rum - dimensionerande ute (minst 1)
+tillopp  = rum + lutning * spann * B ^ böjning
+B        = (balans - ute) / räckvidd, aldrig under 0
+räckvidd = balans - dimensionerande ute (minst 1)
+spann    = rum - dimensionerande ute (minst 1)
 ```
 
 - **Lutningen** avgör den kalla änden. Vid dimensionerande ute (-18) är B
