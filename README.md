@@ -35,9 +35,11 @@ kör `utanPython`.
 `@Tag("python")`. De egna testerna säger vad som är fel ett fall i taget, så
 ta dem först och Pythonfallen när de är gröna.
 
-Första gången blir det **kompileringsfel**. Det är det första röda: testerna
-frågar efter klasser som inte finns än. Skapa dem (Alt+Enter på det röda
-namnet i IntelliJ) och gör dem gröna en grupp i taget.
+Från steg 5 ligger ett **skal** i `src/main` när testerna kommer: klasserna,
+konstanterna och alla metoder, med tomma svar (`null`, `0`, `false`). Då är
+det första röda testerna, inte kompileringsfel, och du fyller i metoderna en
+grupp i taget. I steg 1-4 skapar du klasserna själv (Alt+Enter på det röda
+namnet i IntelliJ).
 
 ## Stegen
 

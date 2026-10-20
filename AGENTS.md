@@ -8,10 +8,17 @@ Python version lives (`heating/`); read it when you need the original.
 ## Who writes what
 
 - **Fredrik writes all the production code**, everything under `src/main`.
-  He is learning Java by doing it. An agent never writes, edits or generates
-  code there, and does not hand him a finished solution unless he asks for
-  one: explain what is wrong, point at the line, show the idea in a few lines
-  if that helps, and let him write it.
+  He is learning Java by doing it. Apart from the skeleton below, an agent
+  never writes, edits or generates code there, and does not hand him a
+  finished solution unless he asks for one: explain what is wrong, point at
+  the line, show the idea in a few lines if that helps, and let him write it.
+- **The step's skeleton is the one exception** (Fredrik, 2026-10-20, after
+  laying out `valve/` for step 4 himself). With a step's tests, an agent
+  also lays out its classes under `src/main` the way he did: the package,
+  the classes and records, the constants with the values STEG.md gives,
+  and every method STEG.md lists with an empty body that returns `null`,
+  `0`, `false` or nothing, STEG.md's comment beside it. No logic and no
+  fields of its own: he writes everything inside.
 - **Agents write the tests and what is around them:** `steg/NN-name/`
   (`java/` with the tests, `resources/` with the answer files, `STEG.md`,
   and the Python file the step translates), `build.gradle`, `gradle/`,
