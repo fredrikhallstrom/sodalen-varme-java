@@ -82,6 +82,23 @@ python3 verktyg/facit.py <sökväg till heating/ i sodalen-router-system>
 
 Fallen slumpas med ett fast frö, så samma körning ger samma filer.
 
+## Från Python till Java
+
+| Python | Java |
+|---|---|
+| `max(a, b)`, `min(a, b)` | `Math.max(a, b)`, `Math.min(a, b)` |
+| `x ** y` | `Math.pow(x, y)` |
+| `abs(x)` | `Math.abs(x)` |
+| `x // y`, `math.floor(x)` | `Math.floor(x / y)`, `Math.floor(x)` (inte `(int)`) |
+| `CONSTANT = 0.95` överst i filen | `private static final double CONSTANT = 0.95;` överst i klassen |
+| `if x <= 0.0: return y` | `if (x <= 0.0) { return y; }` |
+| `for i in range(1, n):` | `for (int i = 1; i < n; i++) {` |
+| `None`, `x is not None` | `null`, `x != null` (med `Double`, inte `double`) |
+| `(a, b, c)` som inte ändras | `List.of(a, b, c)` |
+
+Ge mellanresultaten samma namn som i Python (`span`, `share`, `excess`), så
+går det att jämföra rad för rad.
+
 ## Java 25 som passar här
 
 - **`record`** för data som inte ändras: `PidGains`, `PidResult`. En record kan

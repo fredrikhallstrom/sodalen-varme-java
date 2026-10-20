@@ -1,5 +1,8 @@
 # Steg 2: PID, den inre loopen
 
+> **Originalet:** [`pid.py`](pid.py) i den här mappen är Pythonkoden du
+> översätter. Varje funktion där blir en metod här, oftast rad för rad.
+
 Tilloppets fel in, ventilläge ut. Var 30:e sekund jämför regulatorn tilloppet
 med börvärdet och säger vilket läge shuntventilen ska stå i. Svaret är ett
 **läge** ("62 %"), inte en knuff ("2 % mer"). Det tål då ett missat varv,

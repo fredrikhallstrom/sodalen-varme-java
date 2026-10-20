@@ -1,5 +1,8 @@
 # Steg 1: Tider i ord
 
+> **Originalet:** [`durations.py`](durations.py) i den här mappen är Pythonkoden du
+> översätter. Varje funktion där blir en metod här, oftast rad för rad.
+
 Räknare som kan dra iväg, som timmar inlärning eller timmar i en tabellruta,
 visas i nästa större enhet när de växer: minuter, timmar, dagar, veckor,
 månader, år. 311 timmar läser ingen, men "1,9 veckor" säger något. Under tio

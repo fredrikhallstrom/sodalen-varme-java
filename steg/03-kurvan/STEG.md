@@ -1,5 +1,8 @@
 # Steg 3: Värmekurvan
 
+> **Originalet:** [`curve.py`](curve.py) i den här mappen är Pythonkoden du
+> översätter. Varje funktion där blir en metod här, oftast rad för rad.
+
 Hur varmt tilloppet ska vara vid en viss utetemperatur:
 
 ```
