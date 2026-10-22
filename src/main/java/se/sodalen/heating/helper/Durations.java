@@ -57,7 +57,8 @@ public final class Durations {
         }
 
         if (years >= 10.0 || years % 1 == 0) {
-            return String.format("%d år", Integer.parseInt(Double.toString(Math.round(years)).substring(0, Double.toString(years).indexOf("."))));
+            return String.format("%d år", Integer.parseInt(Double.toString(Math.round(years)).substring(0,
+                    Double.toString(years).indexOf("."))));
         }
 
         return String.format("%.1f år", years).replace(".", ",");
@@ -71,7 +72,8 @@ public final class Durations {
 
         if (months >= 10 || months % 1 == 0) {
             months = Math.round(months);
-            return String.format("%d månader", Integer.parseInt(Double.toString(months).substring(0, Double.toString(months).indexOf("."))));
+            return String.format("%d månader", Integer.parseInt(Double.toString(months).substring(0,
+                    Double.toString(months).indexOf("."))));
         }
 
         return String.format("%.1f månader", months).replace(".", ",");
@@ -84,7 +86,8 @@ public final class Durations {
         }
 
         if (weeks % 1 == 0) {
-            return String.format("%d veckor", Integer.parseInt(Double.toString(weeks).substring(0, Double.toString(weeks).indexOf("."))));
+            return String.format("%d veckor", Integer.parseInt(Double.toString(weeks).substring(0,
+                    Double.toString(weeks).indexOf("."))));
         }
         return String.format("%.1f veckor", weeks).replace(".", ",");
     }
@@ -97,7 +100,8 @@ public final class Durations {
         }
 
         if (days % 1 == 0) {
-            return String.format("%d dagar", Integer.parseInt(Double.toString(days).substring(0, Double.toString(days).indexOf("."))));
+            return String.format("%d dagar", Integer.parseInt(Double.toString(days).substring(0,
+                    Double.toString(days).indexOf("."))));
         }
 
         return String.format("%.1f dagar", days).replace(".", ",");
@@ -115,7 +119,8 @@ public final class Durations {
         }
 
         if (hours >= 10 || hours % 1 == 0) {
-            return String.format("%d h", Integer.parseInt(Double.toString(hours).substring(0, Double.toString(hours).indexOf("."))));
+            return String.format("%d h", Integer.parseInt(Double.toString(hours).substring(0,
+                    Double.toString(hours).indexOf("."))));
 
         } else {
             return String.format("%.1f h", hours).replace(".", ",");

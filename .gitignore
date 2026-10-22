@@ -1,6 +1,8 @@
+bin/
 .gradle/
 build/
 .idea/
 *.iml
 out/
 __pycache__/
+.vscode/
