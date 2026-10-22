@@ -1,12 +1,14 @@
 package se.sodalen.heating.curve;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 public final class Curve {
+    private Curve() {
+        /* This utility class should not be instantiated */
+    }
+
     public static final List<Double> EVR_RISE =
-            List.of(0.42, 0.58, 0.74, 0.91, 1.32, 1.74, 2.24, 2.73);
+            List.of(0.42, 0.58, 0.74, 0.91, 1.32, 1.74, 2.24, Math.E);
 
     private static final double EVR_ORIGIN = 20.0;
     private static final double MAX_SHARE = 0.95;
@@ -29,9 +31,7 @@ public final class Curve {
             span = 1;
         }
 
-        double result = room + slope * span * Math.pow(share, curvature);
-
-        return result;
+        return room + slope * span * Math.pow(share, curvature);
     }
 
     public static double balanceThrough(double outdoor, double wanted, double room,
@@ -49,7 +49,8 @@ public final class Curve {
     }
 
     public static double evrNumber(double slope, double room, double designOutdoor) {
-        double low, high;
+        double low;
+        double  high;
         double rise = evrRise(slope, room, designOutdoor);
         List<Double> evrTable = EVR_RISE;
 
@@ -65,7 +66,12 @@ public final class Curve {
     }
 
     public static double evrSlope(double number, double room, double designOutdoor) {
-        double low, high, rise, supply, span, result;
+        double low;
+        double  high;
+        double  rise;
+        double  supply;
+        double  span;
+        double  result;
         List<Double> evrTable = EVR_RISE;
         int index = Math.clamp(
                 ((int) Math.floor(number)),
@@ -86,7 +92,9 @@ public final class Curve {
                                            double slope, double curvature, double balance) {
 
         double step = 0.5;
-        double result, up, down;
+        double result;
+        double  up;
+        double  down;
 
         up = supply(outdoor, room + step, designOutdoor, slope, curvature, balance + step);
         down = supply(outdoor, room - step, designOutdoor, slope, curvature, balance - step);
@@ -99,7 +107,8 @@ public final class Curve {
     public static double middleDeviation(double room, double designOutdoor, double slope,
                                          double balance, double curvature, double reference) {
 
-        double worst, steps;
+        double worst;
+        double  steps;
 
         if (balance <= designOutdoor) {
             return 0.0;

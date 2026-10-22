@@ -1,7 +1,5 @@
 package se.sodalen.heating.valve;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -58,7 +56,6 @@ public final class ValveMap {
     }
 
     public Double observe(Double position, Double flow, Double ret, Double boiler, double dt) {
-        double result;
 
         if (position == null || dt <= 0.0) {
             lastPosition = null;
@@ -177,7 +174,10 @@ public final class ValveMap {
 
         List<ValvePoint> points = known();
         List<Double> slopes = new ArrayList<>();
-        double s1, s0, p0, p1;
+        double s1;
+        double s0;
+        double p0;
+        double p1;
         for (int i = 0; i + 1 < points.size(); i++) {
             ValvePoint po0 = points.get(i);
             ValvePoint po1 = points.get(i + 1);
@@ -209,23 +209,4 @@ public final class ValveMap {
 
     }
 
-//    public Map<String, Double> summary() {
-//
-//        StringBuilder sb = new StringBuilder();
-//        for (int band = 0; band < share.length; band++) {
-//            sb.append(String.format("%.0f: %d", band * BAND, Math.round(share[band])));
-//        }
-//        String andelPerLage = sb.toString();
-//
-//        String lagenMedData = String.valueOf(known().size());
-//
-//        String timmar = String.valueOf(Math.round(Math.aweight / 3600.0, ));
-//        return Map.of(
-//                "andel_per_lage", andelPerLage,
-//                "lagen_med_data", lagenMedData,
-//                "timmar", timmar,
-//                "skuggfel", skuggFel,
-//                "skuggtimmar", skuggTimmar
-//        );
-//    }
 }
