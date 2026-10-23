@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 // Kurvtabellen: vad huset behövde, per två grader ute och sex timmar av dygnet.
 
@@ -84,20 +85,15 @@ public final class PointTable {
     }                   // med new Rules()
 
     public List<Bin> bins(Rules rules) {
-        Map<Integer, List<Cell>> byBin = new HashMap<>();
-        for (int index = 0; index < cells.size(); index++) {
-            List<Cell> binCells = new ArrayList<>();
-            for (Map.Entry<Key, Cell> entry : cells.entrySet()) {
-                if (entry.getValue().weight() > 0.0) {
-                    binCells.add(entry.getValue());
-                }
+        Map<Integer, List<Cell>> byBin = new TreeMap<>();
+        for (Map.Entry<Key, Cell> binCell : cells.entrySet()) {
+            if (binCell.getValue().weight() > 0.0) {
+                byBin.computeIfAbsent(binCell.getKey().index, k -> new ArrayList<>()).add(binCell.getValue());
             }
-            byBin.put(index, binCells);
         }
 
         List<Bin> out = new ArrayList<>();
-        for (int index = 0; index < byBin.size(); index++) {
-            List<Cell> binCells = new ArrayList<>(byBin.get(index));
+        for (List<Cell> binCells : byBin.values()) {
             double hours = binCells.stream()
                     .mapToDouble(Cell::weight)
                     .sum();
@@ -120,7 +116,7 @@ public final class PointTable {
             Map<Status, Double> means = judge(hours, spread, sectors, rules);
 
             out.add(new Bin(
-                    binCells.get(index).outdoor(),
+                    calculateAverageOutdoor(binCells, hours),
                     need,
                     hours,
                     spread,
@@ -135,6 +131,16 @@ public final class PointTable {
 
         return out;
 }
+
+    private double calculateAverageOutdoor(List<Cell> binCells, double hours) {
+        double cellSum = 0;
+        for (Cell cell : binCells) {
+            cellSum += cell.outdoor();
+        }
+        cellSum /= hours;
+
+        return cellSum;
+    }
 
     private static double minAge(List<Cell> binCells) {
         double age = Double.MAX_VALUE;
