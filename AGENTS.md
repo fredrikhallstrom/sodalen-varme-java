@@ -24,8 +24,8 @@ Python version lives (`heating/`); read it when you need the original.
   and the Python file the step translates), `build.gradle`, `gradle/`,
   `verktyg/` and the docs.
 - **One package per part** under `se.sodalen.heating` (`helper`, `pid`,
-  `curve`, `valve`; Fredrik's choice). A step's tests live in the package of the
-  class they test, and its `STEG.md` names that package. Ask him which
+  `curve`, `valve`, `estimate`; Fredrik's choice). A step's tests live in
+  the package of the class they test, and its `STEG.md` names that package. Ask him which
   package a new part goes in before writing its tests.
 - **A test is not changed to make code pass.** If Fredrik thinks a test is
   wrong, look at it with him; it may be.
@@ -58,4 +58,5 @@ commit the new answer files, and tell him which tests may turn red and why.
     JAVA_HOME=/usr/lib/jvm/java-25-temurin-jdk ./gradlew test
 
 Gradle 9.8 with the Groovy DSL and a version catalog, JUnit 6. Commits are
-local (the repository has no remote yet), in Swedish like its history.
+in Swedish like its history. The repository has a remote on GitHub
+(`origin`); Fredrik pushes, agents only commit locally.

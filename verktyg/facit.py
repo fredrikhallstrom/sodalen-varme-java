@@ -326,6 +326,182 @@ def points(core, rng) -> None:
           ["ops", "defaultRules", "rules", "bins", "statuses", "queries", "hoursAt", "keys"], rows)
 
 
+def _bool(value) -> str:
+    return "" if value is None else str(value).lower()
+
+
+def _floats(values) -> str:
+    """En lista där None är tom och oändligheten inf, som Python skriver den."""
+    return ",".join(_num(v) for v in values)
+
+
+def _matrix(rows) -> str:
+    return "|".join(_floats(row) for row in rows)
+
+
+def _configure(priors: dict, floors: dict) -> str:
+    """"configure,p,index,väntat,styrka,...,f,index,golv,..." """
+    parts = ["configure"]
+    for index, (expected, strength) in sorted(priors.items()):
+        parts += ["p", str(index), _num(expected), _num(strength)]
+    for index, floor in sorted(floors.items()):
+        parts += ["f", str(index), _num(floor)]
+    return ",".join(parts)
+
+
+def estimators(core, rng) -> None:
+    est = core.estimators
+
+    rows = []
+    for _ in range(500):
+        seconds = rng.choice([600.0, 600.0, 0.0, -5.0, rng.uniform(10.0, 5000.0), 1e-3])
+        start = None if rng.random() < 0.5 else rng.uniform(-20.0, 80.0)
+        ewma, ops, outputs = est.Ewma(seconds, value=start), [], []
+        for _ in range(rng.randint(1, 12)):
+            sample = None if rng.random() < 0.1 else rng.uniform(-20.0, 80.0)
+            dt = rng.choice([30.0, 30.0, 0.0, -5.0, rng.uniform(1.0, 1000.0), 1e7,
+                             30.0 * seconds, 29.999 * seconds])
+            ops.append("update," + _list([sample, dt]))
+            outputs.append(ewma.update(sample, dt))
+        rows.append([seconds, start, "|".join(ops), _list(outputs), ewma.value])
+    write("06-skattarna", "ewma.csv", ["seconds", "start", "ops", "outputs", "value"], rows)
+
+    rows = []
+    for _ in range(400):
+        seconds = rng.choice([3600.0, 3600.0, 0.0, -1.0, rng.uniform(60.0, 86400.0)])
+        watch, ops = est.DutyWatch(seconds), []
+        for _ in range(rng.randint(1, 20)):
+            held = rng.choice([True, False, None, True])
+            dt = rng.choice([30.0, 30.0, 0.0, -1.0, rng.uniform(1.0, 7200.0), 1e8, 30.0 * seconds])
+            watch.update(held, dt)
+            ops.append(_bool(held) + "," + _num(dt))
+        rows.append([seconds, "|".join(ops), watch.share, watch.weight, watch.hours])
+    write("06-skattarna", "duty_watch.csv", ["seconds", "ops", "share", "weight", "hours"], rows)
+
+    rows = []
+    for _ in range(500):
+        horizon = rng.choice([3600.0, 3600.0, 0.0, -1.0, 1e9, rng.uniform(60.0, 1e6)])
+        fit, ops = est.Regression(horizon), []
+        centre = rng.uniform(-5.0, 5.0)
+        spread = rng.choice([0.0, 0.01, 0.3, 1.0, 4.0])
+        intercept, slope, noise = rng.uniform(-10.0, 10.0), rng.uniform(-3.0, 3.0), rng.choice([0.0, 0.1, 1.0])
+        for _ in range(rng.randint(0, 30)):
+            dt = rng.choice([30.0, 60.0, 0.0, -1.0, rng.uniform(1.0, 3600.0), 1e9])
+            if rng.random() < 0.15:
+                fit.fade(dt)
+                ops.append("fade," + _num(dt))
+            else:
+                x = centre + rng.uniform(-spread, spread)
+                y = intercept + slope * x + rng.uniform(-noise, noise)
+                fit.add(x, y, dt)
+                ops.append("add," + _list([x, y, dt]))
+        min_variance = rng.choice([0.01, 0.01, 1e-9, rng.uniform(1e-6, 0.5)])
+        a, b, known = fit.fit(min_variance)
+        rows.append([horizon, "|".join(ops), min_variance, fit.weight, fit.sum_x, fit.sum_y, fit.sum_xx,
+                     fit.sum_xy, fit.mean_x, fit.mean_y, fit.variance_x, a, b, str(known).lower()])
+    write("06-skattarna", "regression.csv",
+          ["horizon", "ops", "minVariance", "weight", "sumX", "sumY", "sumXx", "sumXy", "meanX", "meanY",
+           "varianceX", "intercept", "slope", "identifiable"], rows)
+
+    rows = []
+    for _ in range(500):
+        size = rng.randint(1, 6)
+        kind = rng.choice(["spd", "spd", "general", "nodiagonal", "zerocolumn", "tiny", "small"])
+        if kind == "spd":
+            b = [[rng.uniform(-1.0, 1.0) for _ in range(size)] for _ in range(size)]
+            shift = rng.uniform(0.01, 1.0)
+            matrix = [[sum(b[k][r] * b[k][c] for k in range(size)) + (shift if r == c else 0.0)
+                       for c in range(size)] for r in range(size)]
+        else:
+            matrix = [[rng.uniform(-5.0, 5.0) for _ in range(size)] for _ in range(size)]
+            if kind == "nodiagonal":
+                for i in range(size):
+                    matrix[i][i] = 0.0
+            elif kind == "zerocolumn":
+                column = rng.randrange(size)
+                for row in matrix:
+                    row[column] = 0.0
+            elif kind == "tiny":
+                matrix = [[v * 1e-14 for v in row] for row in matrix]
+            elif kind == "small":
+                matrix = [[v * 1e-10 for v in row] for row in matrix]
+        rhs = [rng.uniform(-10.0, 10.0) for _ in range(size)]
+        solved = est.solve_symmetric(matrix, rhs)
+        rows.append([size, _matrix(matrix), _list(rhs), "" if solved is None else _list(solved)])
+    write("06-skattarna", "solve_symmetric.csv", ["size", "matrix", "rhs", "solution"], rows)
+
+    def priors_and_floors(size, truth):
+        priors, floors = {}, {}
+        for index in range(size):
+            if rng.random() < 0.2:
+                priors[index] = (rng.uniform(-3.0, 3.0), rng.choice([rng.uniform(0.1, 50.0), 1e3]))
+            if rng.random() < 0.25:
+                floors[index] = rng.choice([0.0, rng.uniform(-1.0, 1.0)])
+                if rng.random() < 0.5:
+                    truth[index] = floors[index] - rng.uniform(0.1, 2.0)
+        return priors, floors
+
+    rows = []
+    for _ in range(400):
+        size = rng.randint(1, 5)
+        horizon = rng.choice([0.0, 0.0, rng.uniform(5.0, 100.0), -1.0])
+        ridge = rng.choice([None, None, 1e-3, 0.0])
+        fit = est.MultiRegression(size=size, horizon=horizon) if ridge is None else \
+            est.MultiRegression(size=size, horizon=horizon, ridge=ridge)
+        truth = [rng.uniform(-3.0, 3.0) for _ in range(size)]
+        constant = rng.random() < 0.7
+        centre = [rng.uniform(-2.0, 2.0) for _ in range(size)]
+        spread = [rng.choice([1.0, 1.0, 3.0, 0.3, 0.0 if rng.random() < 0.3 else 1.0]) for _ in range(size)]
+        noise = rng.choice([0.0, 0.1, 1.0])
+        ops = []
+        priors, floors = priors_and_floors(size, truth)
+        if priors or floors:
+            fit.configure(priors, floors)
+            ops.append(_configure(priors, floors))
+
+        def sample():
+            x = [centre[i] + rng.uniform(-spread[i], spread[i]) for i in range(size)]
+            if constant:
+                x[0] = 1.0
+            return x
+
+        for _ in range(rng.randint(0, 40)):
+            r = rng.random()
+            if r < 0.05:
+                fit.coefficients()
+                ops.append("coef")
+            elif r < 0.08:
+                index, factor = rng.randrange(size), rng.choice([1.0, rng.uniform(0.2, 5.0)])
+                fit.rescale(index, factor)
+                ops.append("rescale," + str(index) + "," + _num(factor))
+            elif r < 0.10:
+                priors, floors = priors_and_floors(size, list(truth))
+                fit.configure(priors, floors)
+                ops.append(_configure(priors, floors))
+            else:
+                x = sample()
+                if r < 0.13:
+                    x = x + [1.0] if rng.random() < 0.5 or size == 1 else x[:-1]
+                y = sum(t * xi for t, xi in zip(truth, x)) + rng.uniform(-noise, noise)
+                dt = rng.choice([1.0, 1.0, 0.0, rng.uniform(0.1, 5.0), -1.0, 1e4])
+                fit.add(x, y, dt)
+                ops.append("add," + _list([y, dt] + x))
+        queries = [sample(), [c + 10.0 * max(s, 1.0) for c, s in zip(centre, spread)],
+                   [rng.uniform(-5.0, 5.0) for _ in range(size)],
+                   [rng.uniform(-5.0, 5.0) for _ in range(size + rng.choice([0, 0, 0, 1]))]]
+        rows.append([size, horizon, "" if ridge is None else ridge, "|".join(ops),
+                     fit.weight, fit.residual, fit.residual_data, fit.yy, _list(fit.xy), _matrix(fit.xx),
+                     "" if fit.coefficients() is None else _list(fit.coefficients()),
+                     _num(fit.sigma), _num(fit.in_sample_sigma()),
+                     _matrix(queries), _floats(fit.predict(q) for q in queries),
+                     _floats(fit.reach(q) for q in queries), _floats(fit.variance(q) for q in queries),
+                     _floats(fit.uncertainty(q) for q in queries)])
+    write("06-skattarna", "multi_regression.csv",
+          ["size", "horizon", "ridge", "ops", "weight", "residual", "residualData", "yy", "xy", "xx",
+           "coefficients", "sigma", "inSampleSigma", "queries", "predictions", "reaches", "variances",
+           "uncertainties"], rows)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -338,8 +514,10 @@ def main() -> int:
     curve(core, rng)
     valvemap(core, rng)
     points(core, rng)
+    estimators(core, rng)
     for step, module in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
-                         ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points")):
+                         ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
+                         ("06-skattarna", "estimators")):
         copy_source(heating, step, module)
     return 0
 
