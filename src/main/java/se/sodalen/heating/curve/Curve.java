@@ -3,9 +3,7 @@ package se.sodalen.heating.curve;
 import java.util.List;
 
 public final class Curve {
-    private Curve() {
-        /* This utility class should not be instantiated */
-    }
+    private Curve() {}
 
     public static final List<Double> EVR_RISE =
             List.of(0.42, 0.58, 0.74, 0.91, 1.32, 1.74, 2.24, 2.73);
