@@ -13,6 +13,9 @@ public final class PointTable {
     public static final int SECTORS = 4;
     public static final double SECTOR_HOURS = 24.0 / SECTORS;
 
+    private record Verdict(Status status, double weight) {
+    }
+
     private record Key(int index, int sector) {
     }
 
@@ -30,25 +33,19 @@ public final class PointTable {
         return (int) Math.floor(((hour % 24) + 24) % 24 / SECTOR_HOURS);
     }
 
-    private Map<Status, Double> judge(Double hours, Double spread, int sectors, Rules rules) {
+    private Verdict judge(double hours, double spread, int sectors, Rules rules) {
         if (hours < rules.redHours()) {
-            return new HashMap<Status, Double>() {{
-                put(Status.RED, 0.0);
-            }};
+            return new Verdict(Status.RED, 0.0);
         }
-        ;
 
         if (hours >= rules.greenHours() && spread <= rules.greenSpread() && sectors >= rules.greenSectors()) {
-            return new HashMap<Status, Double>() {{
-                put(Status.GREEN, 1.0);
-            }};
+            return new Verdict(Status.GREEN, 1.0);
         }
 
         double coverage = (double) sectors / SECTORS;
-        return new HashMap<Status, Double>() {{
-            put(Status.YELLOW, 0.5 * Math.min(1.0, hours / rules.greenHours()) * coverage);
-        }};
+        return new Verdict(Status.YELLOW, 0.5 * Math.min(1.0, hours / rules.greenHours()) * coverage);
     }
+
 
     public void add(double outdoor, double need, Double wind, Double hour, double hours) {
 
@@ -114,7 +111,7 @@ public final class PointTable {
                     : 0.0;
 
             int sectors = counted.size();
-            Map<Status, Double> means = judge(hours, spread, sectors, rules);
+            Verdict verdict = judge(hours, spread, sectors, rules);
 
             out.add(new Bin(
                     calculateAverageOutdoor(binCells, hours),
@@ -124,8 +121,8 @@ public final class PointTable {
                     sectors,
                     calculateAverageWind(binCells, hours),
                     minAge(binCells),
-                    means.keySet().stream().findFirst().get(),
-                    means.values().stream().findFirst().get()
+                    verdict.status(),
+                    verdict.weight()
 
             ));
         }
