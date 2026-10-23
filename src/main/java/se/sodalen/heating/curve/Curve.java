@@ -50,7 +50,7 @@ public final class Curve {
 
     public static double evrNumber(double slope, double room, double designOutdoor) {
         double low;
-        double  high;
+        double high;
         double rise = evrRise(slope, room, designOutdoor);
         List<Double> evrTable = EVR_RISE;
 
@@ -67,11 +67,11 @@ public final class Curve {
 
     public static double evrSlope(double number, double room, double designOutdoor) {
         double low;
-        double  high;
-        double  rise;
-        double  supply;
-        double  span;
-        double  result;
+        double high;
+        double rise;
+        double supply;
+        double span;
+        double result;
         List<Double> evrTable = EVR_RISE;
         int index = Math.clamp(
                 ((int) Math.floor(number)),
@@ -93,8 +93,8 @@ public final class Curve {
 
         double step = 0.5;
         double result;
-        double  up;
-        double  down;
+        double up;
+        double down;
 
         up = supply(outdoor, room + step, designOutdoor, slope, curvature, balance + step);
         down = supply(outdoor, room - step, designOutdoor, slope, curvature, balance - step);
@@ -108,7 +108,7 @@ public final class Curve {
                                          double balance, double curvature, double reference) {
 
         double worst;
-        double  steps;
+        double steps;
 
         if (balance <= designOutdoor) {
             return 0.0;
@@ -120,8 +120,8 @@ public final class Curve {
         for (int i = 1; i < steps; i++) {
             double outdoor = balance - (balance - designOutdoor) * i / steps;
             double gap = (
-                supply(outdoor, room, designOutdoor, slope, curvature, balance) -
-                supply(outdoor, room, designOutdoor, slope, reference, balance)
+                    supply(outdoor, room, designOutdoor, slope, curvature, balance) -
+                            supply(outdoor, room, designOutdoor, slope, reference, balance)
             );
             if (Math.abs(gap) > Math.abs(worst)) {
                 worst = gap;

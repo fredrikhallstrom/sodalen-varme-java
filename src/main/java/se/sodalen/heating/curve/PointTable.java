@@ -30,12 +30,13 @@ public final class PointTable {
         return (int) Math.floor(((hour % 24) + 24) % 24 / SECTOR_HOURS);
     }
 
-    private Map<Status, Double> judge( Double hours, Double spread, int sectors, Rules rules) {
+    private Map<Status, Double> judge(Double hours, Double spread, int sectors, Rules rules) {
         if (hours < rules.redHours()) {
             return new HashMap<Status, Double>() {{
                 put(Status.RED, 0.0);
             }};
-        };
+        }
+        ;
 
         if (hours >= rules.greenHours() && spread <= rules.greenSpread() && sectors >= rules.greenSectors()) {
             return new HashMap<Status, Double>() {{
@@ -69,7 +70,7 @@ public final class PointTable {
             return;
         }
 
-        double factor = halfLifeHours > 0.0 ? Math.pow(0.5, hours / halfLifeHours) : 1.0;
+        double factor = halfLifeHours > 0.0 ? Math.pow(0.5, (hours / halfLifeHours)) : 1.0;
 
         for (Cell cell : cells.values()) {
             cell.fade(factor, hours);
@@ -109,7 +110,7 @@ public final class PointTable {
             double spread = hours > 0.0 ? Math.sqrt(Math.max(0.0, binCells.stream()
                     .mapToDouble(Cell::m2)
                     .sum() / hours
-                    ))
+            ))
                     : 0.0;
 
             int sectors = counted.size();
@@ -130,12 +131,12 @@ public final class PointTable {
         }
 
         return out;
-}
+    }
 
     private double calculateAverageOutdoor(List<Cell> binCells, double hours) {
         double cellSum = 0;
         for (Cell cell : binCells) {
-            cellSum += cell.outdoor();
+            cellSum += cell.outdoor() * cell.weight();
         }
         cellSum /= hours;
 
@@ -162,14 +163,13 @@ public final class PointTable {
     }
 
     public String keyAt(double outdoor, Double hour) {
-    return String.format("%d:%d", binIndex(outdoor), sector(hour));
-}                   // "fack:del", t.ex. "-2:3"
+        return String.format("%d:%d", binIndex(outdoor), sector(hour));
+    }                   // "fack:del", t.ex. "-2:3"
 
-public double hoursAt(double outdoor, Double hour) {
-    Cell cell = cells.get((new Key(binIndex(outdoor), sector(hour))));
-    return cell != null ? cell.weight() : 0.0;
-}
-
+    public double hoursAt(double outdoor, Double hour) {
+        Cell cell = cells.get((new Key(binIndex(outdoor), sector(hour))));
+        return cell != null ? cell.weight() : 0.0;
+    }
 
 
 }
