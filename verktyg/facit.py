@@ -774,6 +774,192 @@ def thermal(core, rng) -> None:
            "steadyXy", "nightXy", "fitCoefficients", "steadyCoefficients", "nightCoefficients"], rows)
 
 
+def _reading(r) -> str:
+    """"namn:temperatur:vind:riktning:moln" - tomt för None."""
+    return ":".join([r.name] + [_num(v) for v in (r.temperature, r.wind, r.bearing, r.cloud)])
+
+
+def _readings(readings) -> str:
+    return "/".join(_reading(r) for r in readings)
+
+
+def _map(values: dict) -> str:
+    """"namn:värde/namn:värde" i insättningsordning; tomt när den är tom."""
+    return "/".join(f"{name}:{_num(value)}" for name, value in values.items())
+
+
+def _covariance(covariance: dict) -> str:
+    """"första:andra:värde/..." rad för rad, kolumn för kolumn, i insättningsordning."""
+    return "/".join(f"{first}:{second}:{_num(value)}"
+                    for first, row in covariance.items() for second, value in row.items())
+
+
+def _standin(slots) -> str:
+    """Prognosen som "timmar:ute" med / emellan; tom prognos = tomt."""
+    return "/".join(f"{_num(hours)}:{_num(c.outdoor)}" for hours, c in slots)
+
+
+def forecast(core, rng) -> None:
+    fc = core.forecast
+    Reading, Conditions, solve = fc.Reading, core.thermal.Conditions, core.estimators.solve_symmetric
+    asks = ["all", "subset", "one", "never", "empty", "current", "lacking", "north", "none", "standin"]
+    found = {"clamp": "klämd vikt", "fallback": "reservsvar", "retune": "retune", "none": "combine utan temperatur",
+             "standin": "standin på 1,5 h", "gap": "sanning None", "quiet": "tyst källa", "extras": "vind/riktning/moln"}
+    counts = {key: 0 for key in found}
+
+    def answer(ensemble, names):
+        """Vad lösningen gör med namnen: klämmer en negativ vikt, faller tillbaka på lika delar, eller inget."""
+        if len(names) < 2:
+            return None
+        solved = solve(ensemble._matrix(names), [1.0] * len(names))
+        if solved is None or sum(solved) <= 0.0:
+            return "fallback"
+        return "clamp" if any(value < 0.0 for value in solved) else None
+
+    def scenario(long):
+        """Några källor genom ett väder med ensemblen som domare; frågor här och var och några på slutet.
+        Tvillingar delar ett fel; "doubled" ger den ena dubbelt (en negativ vikt att klämma) och
+        "identical" exakt samma avläsning (en singulär matris när priorn hunnit klinga av)."""
+        kind = rng.choice(["plain"] * 11 + ["twins"] * 2 + ["doubled"] * 2 + ([] if long else ["identical"] * 2))
+        if kind == "plain":
+            names = rng.sample(["smhi", "yr", "met", "owm", "hill"], rng.choice([2, 2, 3, 3, 4, 5]))
+        else:
+            names = ["twin_a", "twin_b"] + rng.sample(["lone", "a", "b", "c"], rng.choice([0, 1, 1, 2, 3]))
+            rng.shuffle(names)
+        twins = ("twin_a", "twin_b")
+        offsets = {n: round(rng.uniform(-3.0, 3.0), 4) for n in names}
+        noise = {n: round(rng.uniform(0.05, 3.0), 4) for n in names}
+        if kind == "identical":
+            offsets["twin_b"] = offsets["twin_a"]
+        extras = rng.random() < 0.3
+        carries = {n: tuple(extras and rng.random() < 0.6 for _ in range(3)) for n in names}
+        if kind == "identical":  # kort horisont och många varv, så att priorn på diagonalen försvinner helt
+            total, dt, retune_at = rng.randint(45, 100), 3600.0, rng.randint(0, 3)
+            horizon = round(rng.uniform(3600.0, 4000.0), 1)
+            settled = retune_at + int(32.0 * horizon / dt) + 4  # frågor innan dess vore illa konditionerade
+        else:
+            r = rng.random()
+            total = rng.randint(151, 400) if long else rng.randint(5, 19) if r < 0.1 else \
+                int(20 + 131 * rng.random() ** 3.5)
+            dt = rng.choice([1800.0] * 6 + [600.0, 3600.0])
+            retune_at = rng.randrange(total) if rng.random() < 0.25 else None
+            horizon, settled = round(rng.uniform(3600.0, 30 * 86400.0), 1), 0
+        sprinkle = kind != "identical" and rng.random() < 0.25
+        quiet, q0, q1 = None, 0, 0
+        candidates = [n for n in names if kind != "identical" or n not in twins]
+        if candidates and rng.random() < 0.25:
+            quiet = rng.choice(candidates)
+            q0 = 0 if rng.random() < 0.4 else rng.randrange(total)
+            q1 = total if rng.random() < 0.3 else min(total, q0 + rng.randint(1, max(1, total // 2)))
+        gaps = set(rng.sample(range(total), rng.randint(1, 3))) if rng.random() < 0.2 else set()
+
+        def readings_at(truth, step):
+            """Vad källorna säger: var och en med sin offset och sitt brus, tvillingarna med ett delat fel."""
+            shared, out = rng.uniform(-2.0, 2.0), []
+            for name in names:
+                if name == quiet and q0 <= step < q1:
+                    temperature = None
+                else:
+                    temperature = truth + offsets[name]
+                    if name not in twins:
+                        temperature += rng.uniform(-noise[name], noise[name])
+                    elif kind == "identical":
+                        temperature += shared
+                    else:
+                        temperature += (2.0 * shared if kind == "doubled" and name == "twin_b" else shared) \
+                            + rng.uniform(-0.05, 0.05)
+                    temperature = round(temperature, 4)
+                wind, bearing, cloud = [round(rng.uniform(0.0, top), 1) if carried and rng.random() > 0.1 else None
+                                        for carried, top in zip(carries[name], (15.0, 360.0, 100.0))]
+                out.append(Reading(name, temperature, wind, bearing, cloud))
+            return out
+
+        ensemble, ops, outputs, flags = fc.Ensemble(), [], [], set()
+
+        def ask(truth, step, what=None):
+            what = what or rng.choice(asks)
+            if what in ("all", "subset", "one", "never", "empty"):
+                if what == "all":
+                    asked = list(names)
+                elif what == "subset":
+                    asked = rng.sample(names, rng.randint(1, len(names)))
+                elif what == "one":
+                    asked = [rng.choice(names)]
+                elif what == "never":
+                    asked = rng.sample(names, rng.randint(0, len(names)))
+                    asked.insert(rng.randint(0, len(asked)), "new")
+                else:
+                    asked = []
+                weights, spread = ensemble.weights(asked)
+                flags.add(answer(ensemble, asked))
+                ops.append("weights," + "/".join(asked))
+                outputs.append("/".join(_num(weights[n]) for n in asked) + "," + _num(spread))
+            elif what in ("current", "lacking", "north", "none"):
+                readings = readings_at(truth, step)
+                if what == "lacking":
+                    i = rng.randrange(len(readings))
+                    r = readings[i]
+                    readings[i] = Reading(r.name, None, r.wind, r.bearing, r.cloud)
+                elif what == "north":
+                    far, near = rng.choice([(350.0, 10.0), (355.0, 5.0), (340.0, 20.0), (10.0, 350.0)])
+                    readings = [Reading(names[0], round(truth + offsets[names[0]], 4), bearing=far),
+                                Reading(names[1], round(truth + offsets[names[1]], 4), bearing=near)]
+                elif what == "none":
+                    readings = [Reading(r.name, None, r.wind, r.bearing, r.cloud) for r in readings]
+                elif rng.random() < 0.15:
+                    readings.append(Reading("new", round(truth + rng.uniform(-3.0, 3.0), 4)))
+                out = ensemble.combine(readings)
+                flags.add(answer(ensemble, [r.name for r in readings if r.temperature is not None]))
+                if out.temperature is None:
+                    flags.add("none")
+                ops.append("combine," + _readings(readings))
+                outputs.append(",".join([_num(out.temperature), _num(out.wind), _num(out.bearing), _num(out.cloud),
+                                         _num(out.uncertainty), str(out.sources), _map(out.weights)]))
+            else:
+                first = rng.choice([round(rng.uniform(0.0, 3.0), 2)] * 4 + [1.5, 1.5001, 1.0, 0.0, 2.0])
+                slots = [(round(first + i, 4), Conditions(outdoor=round(truth + rng.uniform(-3.0, 3.0), 1), wind=None,
+                                                         bearing=None, sun=0.0, hour=None))
+                         for i in range(rng.randint(0, 4))]
+                if slots and first == 1.5:
+                    flags.add("standin")
+                ops.append("standin," + _standin(slots))
+                outputs.append(_num(fc.outdoor_from_forecast(slots)))
+
+        value = rng.uniform(-10.0, 10.0)
+        if rng.random() < 0.15:
+            ask(round(value, 4), 0)  # en fråga innan någon är bedömd
+        for step in range(total):
+            value += rng.uniform(-1.5, 1.5)
+            truth = round(max(-25.0, min(25.0, value)), 4)
+            if step == retune_at:
+                ensemble.retune(horizon)
+                ops.append("retune," + _num(horizon))
+                flags.add("retune")
+            step_dt = rng.choice([dt] * 18 + [0.0, -10.0]) if sprinkle else dt
+            readings = readings_at(truth, step)
+            given = None if step in gaps else truth
+            if given is None:
+                flags.add("gap")
+            if any(r.temperature is None for r in readings):
+                flags.add("quiet")
+            if any(r.wind is not None or r.bearing is not None or r.cloud is not None for r in readings):
+                flags.add("extras")
+            ops.append("observe," + _num(given) + "," + _num(step_dt) + "," + _readings(readings))
+            outputs.append(_bool(ensemble.observe(given, readings, step_dt)))
+            if step >= settled and rng.random() < 3.0 / total:
+                ask(truth, step)
+        for what in ["all", "current"] + rng.sample([a for a in asks if a not in ("all", "current")], 3):
+            ask(truth, total - 1, what)
+        for flag in flags:
+            if flag:
+                counts[flag] += 1
+        return ["|".join(ops), "|".join(outputs), ensemble.weight, _map(ensemble.bias), _covariance(ensemble.covariance)]
+
+    rows = [scenario(long=False) for _ in range(246)] + [scenario(long=True) for _ in range(4)]
+    write("08-prognosen", "ensemble.csv", ["ops", "outputs", "weight", "bias", "covariance"], rows)
+    print("08-prognosen: rader med " + ", ".join(f"{found[key]} {counts[key]}" for key in found))
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -788,9 +974,11 @@ def main() -> int:
     points(core, rng)
     estimators(core, rng)
     thermal(core, rng)
+    forecast(core, rng)
     for step, module in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
                          ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
-                         ("06-skattarna", "estimators"), ("07-husmodellen", "thermal")):
+                         ("06-skattarna", "estimators"), ("07-husmodellen", "thermal"),
+                         ("08-prognosen", "forecast")):
         copy_source(heating, step, module)
     return 0
 
