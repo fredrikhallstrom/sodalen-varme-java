@@ -502,6 +502,278 @@ def estimators(core, rng) -> None:
            "uncertainties"], rows)
 
 
+def _conditions(indoor, c) -> str:
+    """"inne,ute,vind,riktning,sol,klocka" - tomt för None."""
+    return _floats([indoor, c.outdoor, c.wind, c.bearing, c.sun, c.hour])
+
+
+def _slots(weather) -> str:
+    """Prognosen som "timmar:ute:vind:riktning:sol:klocka" med / emellan; tom prognos = tomt."""
+    return "/".join(":".join(_num(v) for v in (hours, c.outdoor, c.wind, c.bearing, c.sun, c.hour))
+                    for hours, c in weather)
+
+
+def _answer(pair) -> str:
+    """(balans, fel) eller tomt när modellen inte kan svara."""
+    return "" if pair is None else _list(pair)
+
+
+def _outlook(out) -> str:
+    return ",".join([_num(out.hours), _bool(out.holds), _num(out.uncertainty), _bool(out.known),
+                     _num(out.turns_at)])
+
+
+def thermal(core, rng) -> None:
+    from weatherhouse import WeatherHouse  # i heating/tests, på sys.path sedan load_core
+    th = core.thermal
+    Conditions = th.Conditions
+
+    def maybe(value, chance=0.2):
+        return None if rng.random() < chance else value
+
+    rows = []
+    for _ in range(100):
+        elevation = maybe(rng.choice([rng.uniform(-10.0, 90.0), rng.uniform(-10.0, 90.0),
+                                      rng.uniform(90.0, 120.0)]), 0.1)
+        cloud = maybe(rng.choice([rng.uniform(0.0, 100.0), rng.uniform(0.0, 100.0),
+                                  rng.uniform(-30.0, 0.0), rng.uniform(100.0, 150.0)]))
+        rows.append(["solar_index", _floats([elevation, cloud]), _num(th.solar_index(elevation, cloud))])
+    for _ in range(100):
+        wind = maybe(rng.choice([rng.uniform(0.0, 15.0), rng.uniform(0.0, 15.0), rng.uniform(-3.0, 0.0)]))
+        bearing = maybe(rng.choice([rng.uniform(0.0, 360.0), rng.uniform(0.0, 360.0), rng.uniform(-90.0, 450.0)]))
+        hour = maybe(rng.choice([rng.uniform(0.0, 24.0), rng.uniform(0.0, 24.0), rng.uniform(-6.0, 30.0)]))
+        args = [rng.uniform(15.0, 25.0), rng.uniform(-30.0, 25.0), wind, bearing, rng.uniform(0.0, 1.2),
+                rng.uniform(-5.0, 30.0), hour]
+        row = th.regressors(indoor=args[0], outdoor=args[1], wind=wind, bearing=bearing, sun=args[4],
+                            delta=args[5], hour=hour)
+        rows.append(["regressors", _floats(args), _floats(row)])
+    for _ in range(100):
+        args = [rng.choice([rng.uniform(20.0, 60.0), 39.0, rng.uniform(0.0, 20.0)]),
+                rng.choice([rng.uniform(1.0, 20.0), 10.0, rng.uniform(0.0, 1.0)]),
+                rng.choice([1800.0, 600.0, 300.0, rng.uniform(1.0, 3600.0), rng.uniform(0.0, 1.0), 0.0, -5.0])]
+        priors = th.house_priors(*args)
+        rows.append(["priors", _floats(args),
+                     ",".join(f"{index},{_num(expected)},{_num(strength)}"
+                              for index, (expected, strength) in sorted(priors.items()))])
+    for _ in range(100):
+        args = [rng.uniform(0.0, 1.2), rng.uniform(-5.0, 30.0), rng.uniform(-1.0, 1.0)] + \
+            [rng.uniform(-50.0, 150.0) for _ in range(3)]
+        rows.append(["steady_regressors", _floats(args),
+                     _floats(th.steady_regressors(sun=args[0], delta=args[1], slope=args[2], wind=tuple(args[3:])))])
+    for _ in range(100):
+        args = [rng.uniform(-5.0, 60.0), rng.uniform(-1.0, 1.0)] + [rng.uniform(-50.0, 150.0) for _ in range(3)]
+        rows.append(["night_regressors", _floats(args),
+                     _floats(th.night_regressors(heat=args[0], slope=args[1], wind=tuple(args[2:])))])
+    for _ in range(100):
+        indoor = maybe(rng.uniform(15.0, 25.0), 0.1)
+        ret = maybe(rng.choice([rng.uniform(25.0, 50.0), rng.uniform(10.0, 22.0)]), 0.1)
+        flow = maybe((30.0 if ret is None else ret) + rng.uniform(-2.0, 25.0), 0.1)
+        rows.append(["radiator_excess", _floats([flow, ret, indoor]), _num(th.radiator_excess(flow, ret, indoor))])
+    write("07-husmodellen", "thermal.csv", ["kind", "args", "expected"], rows)
+
+    def house(warm):
+        """Ett hus med slumpade parametrar; warm = ett som värmer sig självt vid -5,
+        ibland med en förlust under golvet LOSS_FLOOR."""
+        if warm:
+            return WeatherHouse(indoor=rng.uniform(19.0, 23.0),
+                                g0=rng.choice([rng.uniform(0.0003, 0.0015), rng.uniform(0.004, 0.012)]),
+                                g_wind=rng.uniform(0.0, 0.001), g_north=0.0, solar=rng.uniform(0.3, 1.2),
+                                internal=rng.uniform(0.8, 1.5), radiator=rng.uniform(0.03, 0.09),
+                                daily=rng.uniform(0.0, 0.4), daily_peak=rng.uniform(0.0, 24.0))
+        return WeatherHouse(indoor=rng.uniform(19.0, 23.0), g0=rng.uniform(0.03, 0.09),
+                            g_wind=rng.uniform(0.0, 0.006), g_north=rng.uniform(-0.004, 0.004),
+                            solar=rng.uniform(0.3, 1.2), internal=rng.uniform(0.0, 0.3),
+                            radiator=rng.uniform(0.03, 0.09), daily=rng.uniform(0.0, 0.4),
+                            daily_peak=rng.uniform(0.0, 24.0))
+
+    def weather(clock0):
+        """Väder med slumpade perioder och amplituder, avrundat innan det används; solen
+        går efter hushållets klocka. Ibland utan sol, utan vind eller utan riktning hela vägen."""
+        base, swing, period = rng.uniform(-15.0, 10.0), rng.uniform(0.0, 10.0), rng.uniform(12.0, 72.0)
+        wind_mean, wind_swing, wind_period = rng.uniform(0.0, 6.0), rng.uniform(0.0, 5.0), rng.uniform(5.0, 40.0)
+        turn, bearing0 = rng.uniform(-60.0, 60.0), rng.uniform(0.0, 360.0)
+        peak, sunrise, sunset = rng.uniform(0.2, 1.2), rng.uniform(6.0, 9.0), rng.uniform(15.0, 19.0)
+        skies = [rng.uniform(0.0, 1.0) for _ in range(rng.randint(1, 7))]
+        no_sun, no_wind, no_bearing = rng.random() < 0.15, rng.random() < 0.12, rng.random() < 0.12
+
+        def at(hour):
+            outdoor = base + swing * math.sin(2.0 * math.pi * hour / period)
+            wind = None if no_wind else \
+                round(max(0.0, wind_mean + wind_swing * math.sin(2.0 * math.pi * hour / wind_period)), 1)
+            bearing = None if no_bearing else round((bearing0 + hour * turn) % 360.0, 1)
+            clock = (clock0 + hour) % 24.0
+            height = math.sin(math.pi * (clock - sunrise) / (sunset - sunrise)) if sunrise < clock < sunset else 0.0
+            sun = 0.0 if no_sun else round(peak * height * skies[int(hour // 24) % len(skies)], 2)
+            return round(outdoor, 1), wind, bearing, sun
+        return at
+
+    def scenario(long):
+        """Ett hus genom sitt väder med modellen som åskådare, frågor här och var och några på slutet."""
+        warm = not long and rng.random() < 0.1
+        start = maybe(rng.uniform(0.0, 24.0))  # klockan modellen ser, ibland ingen alls
+        clock0 = rng.uniform(0.0, 24.0) if start is None else start  # hushållets, solens och nattens klocka
+        h, at = house(warm), weather(clock0)
+        if long:
+            nights, sample_seconds, dt = rng.random() < 0.65, 1800.0, 1800.0
+            hours = rng.uniform(12.0, 14.0) * 24.0 if nights else rng.uniform(9.0, 10.0) * 24.0
+        else:
+            nights = rng.random() < 0.12
+            sample_seconds = rng.choice([1800.0, 1800.0, 1800.0, 1800.0, 600.0, 600.0, 300.0])
+            split = sample_seconds > 300.0 and rng.random() < 0.14  # dt kortare än provintervallet
+            dt = sample_seconds / 3.0 if split else sample_seconds
+            hours = rng.uniform(6.0, {1800.0: 30.0, 600.0: 12.0, 300.0: 8.0}[sample_seconds])
+            if split:
+                hours = rng.uniform(6.0, 12.0) if sample_seconds == 1800.0 else 6.0
+            if warm:  # ett varmt hus behöver tid på sig innan förlusten hamnar på golvet
+                sample_seconds, dt, hours = 1800.0, 1800.0, rng.uniform(18.0, 40.0)
+        mode = rng.choice(["regulated", "regulated", "regulated", "fixed", "off"])
+        target, level, period = rng.uniform(19.0, 23.0), rng.uniform(2.0, 15.0), rng.uniform(4.0, 36.0)
+        radiators_on, offset = rng.random() < 0.25, rng.uniform(3.0, 10.0)
+        noise = rng.choice([0.0, 0.0, 0.05, 0.15])
+        total = int(math.ceil(hours * 3600.0 / dt))
+        gap_at = (rng.randrange(1, max(2, total // 5)) if long else rng.randrange(1, total)) \
+            if rng.random() < 0.15 else None
+        design_at = rng.randrange(0, total) if rng.random() < 0.15 else None
+        retune_at = rng.randrange(0, total) if rng.random() < 0.15 else None
+        asks = 3.0 / total
+
+        def delta_at(hour, clock, outdoor, wind, bearing, sun):
+            """Som regulated() i test_thermal.py, ett fast schema, eller värmen av."""
+            if mode == "regulated":
+                need = h.loss_coefficient(wind, bearing) * (target - outdoor) - h.internal \
+                    - h.solar * sun - h.household(clock)
+                return max(0.0, need / h.radiator + 8.0 * (target - h.indoor))
+            if mode == "fixed":
+                return level if (hour % period) < period / 2.0 else 0.0
+            return 0.0
+
+        def conditions(hour):
+            """Vad som frågas: nära det huset fått se eller långt därifrån."""
+            if rng.random() < 0.6:
+                outdoor, wind, bearing, sun = at(hour + rng.uniform(0.0, 24.0))
+                outdoor = round(outdoor + rng.uniform(-3.0, 3.0), 1)
+            else:
+                outdoor = round(rng.uniform(-30.0, 25.0), 1)
+                wind = maybe(round(rng.uniform(0.0, 15.0), 1), 0.3)
+                bearing = maybe(round(rng.uniform(0.0, 360.0), 1), 0.3)
+                sun = rng.choice([0.0, round(rng.uniform(0.0, 1.2), 2)])
+            when = None if rng.random() < (0.7 if start is None else 0.2) else \
+                rng.choice([round((clock0 + hour) % 24.0, 2), round(rng.uniform(0.0, 24.0), 2)])
+            return Conditions(outdoor=outdoor, wind=wind, bearing=bearing, sun=sun, hour=when)
+
+        def forecast(hour):
+            """2-13 rutor över 1-24 timmar, nära eller långt från det lärda; ibland tom."""
+            if rng.random() < 0.03:
+                return []
+            count, first = rng.randint(2, 13), rng.choice([0.0, 0.0, 1.0, 0.5])
+            span, far = rng.uniform(first + 1.0, 24.0), rng.random() < 0.3
+            clocked = rng.random() < (0.3 if start is None else 0.8)
+            cold, warm_at = conditions(hour), rng.uniform(0.0, span)
+            slots = []
+            for i in range(count):
+                offset = round(first + (span - first) * i / (count - 1), 2)
+                when = round((clock0 + hour + offset) % 24.0, 2) if clocked else None
+                if far:
+                    turned = offset >= warm_at and rng.random() < 0.5
+                    c = Conditions(outdoor=round(cold.outdoor + (8.0 if turned else 0.0), 1), wind=cold.wind,
+                                   bearing=cold.bearing, sun=0.7 if turned else cold.sun, hour=when)
+                else:
+                    outdoor, wind, bearing, sun = at(hour + offset)
+                    c = Conditions(outdoor=outdoor, wind=wind, bearing=bearing, sun=sun, hour=when)
+                slots.append((offset, c))
+            return slots
+
+        model, ops, outputs = th.HouseModel(), [], []
+
+        def ask(hour, kind=None):
+            kind = kind or rng.choice(["drift", "unc", "reach", "cools", "floor", "balance", "night",
+                                       "outlook", "outlook"])
+            if kind in ("drift", "unc", "reach"):
+                indoor, c = round(rng.uniform(15.0, 25.0), 2), conditions(hour)
+                ops.append(kind + "," + _conditions(indoor, c))
+                asked = {"drift": model.drift, "unc": model.drift_uncertainty, "reach": model.reach}[kind]
+                outputs.append(_num(asked(indoor, c)))
+            elif kind in ("balance", "night"):
+                indoor = round(rng.uniform(18.0, 24.0), 2)
+                ops.append(kind + "," + _num(indoor))
+                outputs.append(_answer(model.balance(indoor) if kind == "balance" else model.night_balance(indoor)))
+            elif kind == "cools":
+                ops.append("cools")
+                outputs.append(_bool(model.cools_when_left_alone()))
+            elif kind == "floor":
+                ops.append("floor")
+                outputs.append(_bool(model.loss_on_floor()))
+            else:
+                indoor = round(h.indoor + rng.uniform(-1.0, 2.0), 2)
+                floor, confidence = round(indoor - rng.uniform(0.2, 3.0), 2), round(rng.uniform(0.0, 3.0), 2)
+                step_hours, weather = rng.choice([0.25] * 8 + [0.5, 0.1]), forecast(hour)
+                ops.append("outlook," + _floats([indoor, floor, confidence, step_hours]) + "," + _slots(weather))
+                outputs.append(_outlook(model.outlook(indoor=indoor, floor=floor, weather=weather,
+                                                      confidence=confidence, step_hours=step_hours)))
+
+        elapsed, since_sun, step = 0.0, 1e9, 0
+        while elapsed < hours * 3600.0:
+            hour = elapsed / 3600.0
+            clock = (clock0 + hour) % 24.0
+            outdoor, wind, bearing, sun = at(hour)
+            delta = round(delta_at(hour, clock, outdoor, wind or 0.0, bearing or 0.0, sun), 1)
+            h.step(dt / 3600.0, outdoor, wind or 0.0, bearing or 0.0, sun, delta, hour=clock)
+            indoor = round(h.indoor + rng.uniform(-noise, noise), 4)
+            since_sun = 0.0 if sun > 0.05 else since_sun + dt
+            night = None if not nights else \
+                ((clock >= 22.0 or clock < 6.0) and not 7.0 < clock < 17.0 and since_sun >= 7200.0)
+            radiators = None
+            if radiators_on and rng.random() > 0.05:
+                ret = indoor + (offset + 0.6 * delta if delta > 0.0 else 0.0)
+                radiators = round(th.radiator_excess(ret + delta, ret, indoor), 1)
+            when = None if start is None else round(clock, 2)
+            if step == design_at:
+                span, design_delta = round(rng.uniform(20.0, 60.0), 1), round(rng.uniform(0.5, 20.0), 2)
+                seconds = rng.choice([1800.0, 600.0, 300.0, 0.5])
+                model.set_design(span, design_delta, seconds)
+                ops.append("design," + _floats([span, design_delta, seconds]))
+            if step == retune_at:
+                seconds = round(rng.uniform(14.0, 60.0), 1) * 86400.0 if long else \
+                    rng.choice([round(rng.uniform(1.0, 60.0), 1) * 86400.0, 3600.0, 7.0 * 86400.0])
+                model.retune(seconds)
+                ops.append("retune," + _num(seconds))
+            if step == gap_at:
+                ops.append("observe,,,,,,," + _floats([delta, dt, sample_seconds]) + ",,")
+                outputs.append(_bool(model.observe(indoor=None, conditions=None, delta=delta, dt=dt,
+                                                   sample_seconds=sample_seconds)))
+            else:
+                c = Conditions(outdoor=outdoor, wind=wind, bearing=bearing, sun=sun, hour=when)
+                ops.append("observe," + _floats([indoor, outdoor, wind, bearing, sun, when, delta, dt,
+                                                 sample_seconds, radiators]) + "," + _bool(night))
+                outputs.append(_bool(model.observe(indoor=indoor, conditions=c, delta=delta, dt=dt,
+                                                   sample_seconds=sample_seconds, radiators=radiators,
+                                                   night=night)))
+            if rng.random() < asks:
+                ask(hour)
+            elapsed += dt
+            step += 1
+        for kind in ("drift", "unc", "reach", "cools", "floor", "balance", "outlook"):
+            ask(hour, kind)
+        if nights or rng.random() < 0.3:
+            ask(hour, "night")
+
+        def coefficients(fit):
+            return "" if fit.coefficients() is None else _list(fit.coefficients())
+
+        fit, steady, night_fit = model.fit, model.steady, model.night
+        return ["|".join(ops), "|".join(outputs), fit.weight, steady.weight, night_fit.weight,
+                model.observed_hours, model.last_indoor, model.seconds_since_sample, model.since_steady,
+                _floats(model.window), len(model.day), _floats(model.day_totals), _floats(model.stretch),
+                _list(fit.xy), _list(steady.xy), _list(night_fit.xy),
+                coefficients(fit), coefficients(steady), coefficients(night_fit)]
+
+    rows = [scenario(long=False) for _ in range(195)] + [scenario(long=True) for _ in range(25)]
+    write("07-husmodellen", "house_model.csv",
+          ["ops", "outputs", "fitWeight", "steadyWeight", "nightWeight", "observedHours", "lastIndoor",
+           "secondsSinceSample", "sinceSteady", "window", "dayCount", "dayTotals", "stretch", "fitXy",
+           "steadyXy", "nightXy", "fitCoefficients", "steadyCoefficients", "nightCoefficients"], rows)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -515,9 +787,10 @@ def main() -> int:
     valvemap(core, rng)
     points(core, rng)
     estimators(core, rng)
+    thermal(core, rng)
     for step, module in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
                          ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
-                         ("06-skattarna", "estimators")):
+                         ("06-skattarna", "estimators"), ("07-husmodellen", "thermal")):
         copy_source(heating, step, module)
     return 0
 
