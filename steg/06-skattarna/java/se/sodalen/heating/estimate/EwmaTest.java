@@ -125,6 +125,15 @@ class EwmaTest {
             assertEquals(10.0, noConstant.value());
             assertEquals(10.0, negative.value());
         }
+
+        /** Without a time constant the value is the sample itself, not the old value plus the whole
+         *  distance, which can land a rounding error away: the pair below does. */
+        @Test
+        void withoutATimeConstantTheValueIsTheSampleExactly() {
+            Ewma filter = new Ewma(0.0, -21.94);
+            assertEquals(20.85, filter.update(20.85, 30.0));
+            assertEquals(20.85, filter.value());
+        }
     }
 
     @Nested
