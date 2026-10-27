@@ -1,37 +1,42 @@
 package se.sodalen.heating.estimate;
 
-import org.w3c.dom.ranges.Range;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 // Minsta kvadrat i flera variabler, med glömska, förkunskap, golv och en ärlig uppfattning om hur säker den är.
+
 public final class MultiRegression {
-    private int size;
-    private double horizon;
-    private double ridge;
+    private final int size;
+    private final double horizon;
+    private final double ridge;
+    private double residual = 0.0;
     private double residualData = 0.0;
     private Double yY = 0.0;
-    private List<List<Double>> xX = new ArrayList<>(new ArrayList<>());
-    private List<Double> xY = new ArrayList<>();
-    private Map<Integer, Double> priors = new HashMap<>();
+    private final double[][] xX;
+    private final double[] xY;
+    private Map<Integer, Prior> priors = new HashMap<>();
     private Map<Integer, Double> floors = new HashMap<>();
+    private double[] beta;
+    private boolean betaReady = false;
 
     public static final double RIDGE = 1e-6;     // läggs på diagonalen, gånger vikten
     private double weight = 0.0;
 
     public MultiRegression(int size, double horizon) {
         this.size = size;
+        xY = new double[size];
+        xX = new double[size][size];
         this.horizon = horizon;
         this.ridge = RIDGE;
     }                   // med RIDGE
 
     public MultiRegression(int size, double horizon, double ridge) {
         this.size = size;
+        xY = new double[size];
+        xX = new double[size][size];
         this.horizon = horizon;
         this.ridge = ridge;
     }
@@ -42,9 +47,7 @@ public final class MultiRegression {
 
         for (int column = 0; column < size; column++) {
             work[column][size] = rhs[column];
-            for (int row = 0; row < size; row++) {
-                work[column][row] = matrix[column][row];
-            }
+            System.arraycopy(matrix[column], 0, work[column], 0, size);
         }
 
         for (int column = 0; column < size; column++) {
@@ -112,59 +115,351 @@ public final class MultiRegression {
     }
 
     public double[][] xx() {
-        return null;
+        return xX;
     }                   // summan av x x', size gånger size
 
     public double[] xy() {
-        return null;
+        return xY;
     }                   // summan av x y
 
     public double yy() {
-        return 0;
+        return yY;
     }                   // summan av y i kvadrat
 
     public double residual() {
-        return 0;
+        return residual;
     }                   // kvadrerade fel i gissningarna före varje prov
 
     public double residualData() {
-        return 0;
+        return residualData;
     }                   // samma, mot anpassningen av bara datan
 
     public void configure(Map<Integer, Prior> priors, Map<Integer, Double> floors) {
+        this.priors = Map.copyOf(priors);
+        this.floors = Map.copyOf(floors);
+        betaReady = false;
     }                   // index -> förkunskap, index -> golv
 
+    private double decay(double dt) {
+        if (horizon <= 0.0 || dt <= 0.0) {
+            return 1.0;
+        }
+        double ratio = dt / horizon;
+        return ratio < 30 ? Math.pow(Math.E, -ratio) : 0.0;
+    }
+
     public void add(double[] x, double y, double dt) {
+        if (x.length != size) {
+            return;
+        }
+
+        double decay = decay(dt);
+        Double predicted = predict(x);
+        if (predicted != null) {
+            residual = residual * decay + Math.pow(y - predicted, 2);
+        } else {
+            residual *= decay;
+        }
+
+        double[] fromData = !priors.isEmpty() || !floors.isEmpty() ? dataCoefficients() : null;
+        if (fromData == null && (priors.isEmpty() && floors.isEmpty())) {
+            residualData = residual;
+        } else if (fromData != null) {
+            double guess = 0.0;
+            for (int i = 0; i < fromData.length; i++) {
+                guess += fromData[i] * x[i];
+            }
+            residualData = residualData * decay + Math.pow(y - guess, 2);
+        } else {
+            residualData *= decay;
+        }
+
+        betaReady = false;
+
+        if (yY != null) {
+            yY = yY * decay + y * y;
+        }
+
+        weight = weight * decay + 1.0;
+        for (int row = 0; row < size; row++) {
+            xY[row] = xY[row] * decay + x[row] * y;
+            for (int col = 0; col < size; col++) {
+                xX[row][col] = xX[row][col] * decay + x[row] * x[col];
+            }
+        }
     }                   // fel storlek på x: provet släpps
 
+    private double[][] regularized() {
+        double[][] result = new double[size][xX[0].length];
+
+        for (int row = 0; row < size; row++) {
+            for (int col = 0; col < xX[row].length; col++) {
+                double value = xX[row][col];
+                result[row][col] = value + (row == col ? ridge * Math.max(1.0, weight) : 0.0);
+            }
+        }
+
+        return result;
+    }
+
+    private double[] dataCoefficients() {
+        if (weight < size + 1) {
+            return null;
+        }
+
+        return solveSymmetric(regularized(), xY);
+    }
+
     public void rescale(int index, double factor) {
+
+        if (index < 0 || index >= size) {
+            throw new IllegalArgumentException(String.format("no regressor in %d in %d", index, size));
+        }
+
+        if (!(Double.isFinite(factor) && factor > 0.0)) {
+            throw new IllegalArgumentException(String.format("a unit is a positive number. not %f", factor));
+        }
+
+        for(int other = 0; other < size; other++) {
+            xX[index][other] *= factor;
+            xX[other][index] *= factor;
+        }
+        xY[index] *= factor;
+        betaReady = false;
+
     }                   // regressorn i en enhet factor gånger större; IllegalArgumentException vid fel
 
     public double[] coefficients() {
-        return null;
+
+        if (betaReady) {
+            return beta;
+        }
+        beta = solve();
+        betaReady = true;
+        return beta;
     }                   // null med för lite data; sparas tills något ändras
 
+    private double[] solve() {
+        if (weight < size + 1) {
+            return null;
+        }
+        double[][] matrix = regularized();
+        double[] rhs = xY.clone();
+
+        for (Map.Entry<Integer, Prior> entry : priors.entrySet()) {
+            int index = entry.getKey();
+            Prior prior = entry.getValue();
+            matrix[index][index] += prior.strength();
+            rhs[index] += prior.strength() * prior.expected();
+        }
+
+        double[] plain = solveSymmetric(matrix, rhs);
+
+        boolean checkPlainAgainstFloor = true;
+        if (plain != null) {
+            for (Map.Entry<Integer, Double> entry : floors.entrySet()) {
+                if (plain[entry.getKey()] < entry.getValue() - 1e-12) {
+                    checkPlainAgainstFloor = false;
+                    break;
+                }
+            }
+        }
+
+        if (plain != null && checkPlainAgainstFloor) {
+            return plain;
+        }
+
+        List<Integer> bounded = floors.keySet().stream().sorted().toList();
+        double[] best = null;
+        Double bestCost = null;
+
+        for (int mask = 0; mask < (1 << bounded.size()); mask++) {
+            Map<Integer, Double> pinned = new HashMap<>();
+
+            for (int bit = 0; bit < bounded.size(); bit++) {
+                if (((mask >> bit & 1) == 1)) {
+                    int index = bounded.get(bit);
+                    pinned.put(index, floors.get(index));
+                }
+            }
+            double[] beta = solvePinned(matrix, rhs, pinned);
+            if (beta == null) {
+                continue;
+            }
+
+            boolean underAFloor = false;
+            for (int index : bounded) {
+                if (!pinned.containsKey(index) && beta[index] < floors.get(index) - 1e-12) {
+                    underAFloor = true;
+                    break;
+                    }
+                }
+
+
+            if (underAFloor) {
+                continue;
+            }
+
+            double cost = 0.0;
+            for (int r = 0; r < size; r++) {
+                for (int c = 0; c < size; c++) {
+                    cost += beta[r] * matrix[r][c] * beta[c];
+                }
+                cost -= 2.0 * beta[r] * rhs[r];
+            }
+
+            if (bestCost == null || cost < bestCost) {
+                best = beta;
+                bestCost = cost;
+            }
+        }
+        return best;
+    }
+
+
+    private double[] solvePinned(double[][] matrix, double[] rhs, Map<Integer, Double> pinned) {
+        List<Integer> free = new ArrayList<>();
+        for (int i = 0; i < size; i++) {
+            if (!pinned.containsKey(i)) {
+                free.add(i);
+            }
+        }
+
+        double[][] reduced = new double[free.size()][free.size()];
+        double[] reducedRhs = new double[free.size()];
+
+        for (int r = 0; r < free.size(); r++) {
+            int row = free.get(r);
+            for (int c = 0; c < free.size(); c++) {
+                reduced[r][c] = (matrix[row][free.get(c)]);
+            }
+
+            reducedRhs[r] = rhs[row];
+
+            for (Map.Entry<Integer, Double> entry : pinned.entrySet()) {
+                reducedRhs[r] -= (matrix[row][entry.getKey()] * entry.getValue());
+                }
+            }
+
+        double[] solved = !free.isEmpty() ? solveSymmetric(reduced, reducedRhs) : new double[0];
+
+        if (solved == null) {
+            return null;
+        }
+
+        double[] beta = new double[size];
+
+        for (int i = 0; i < free.size(); i++) {
+            beta[free.get(i)] = solved[i];
+        }
+
+        for (Map.Entry<Integer, Double> entry : pinned.entrySet()) {
+            beta[entry.getKey()] = entry.getValue();
+        }
+        return beta;
+    }
+
     public Double predict(double[] x) {
-        return null;
+
+        if (x.length != size) {
+            return null;
+        }
+
+        double[] beta = coefficients();
+        if (beta == null) {
+            return null;
+        }
+
+        double result = 0.0;
+        for (int b = 0; b < beta.length; b++) {
+            result += beta[b] * x[b];
+        }
+
+        return result;
     }
 
     public double sigma() {
-        return 0;
+
+        double degrees = weight - size;
+        if (degrees <= 0.0) {
+            return Double.POSITIVE_INFINITY;
+        }
+
+        double worst = Math.max(residual, residualData);
+        return Math.pow(Math.max(0.0, worst) / degrees, 0.5);
     }                   // typiskt fel; oändligt utan frihetsgrader
 
     public double inSampleSigma() {
-        return 0;
+
+        if (yY == null) {
+            return sigma();
+        }
+
+        double degrees = weight - size;
+        double[] beta = coefficients();
+
+        if(degrees <= 0.0 || beta == null) {
+            return Double.POSITIVE_INFINITY;
+        }
+
+        double linear = 0.0;
+        for (int b = 0; b < beta.length; b++) {
+            linear += beta[b] * xY[b];
+        }
+
+        double quadratic = 0.0;
+        for (int r = 0; r < size; r++) {
+            for (int c = 0; c < size; c++) {
+                quadratic += beta[r] * xX[r][c] * beta[c];
+            }
+        }
+
+        double squares = yY - 2.0 * linear + quadratic;
+
+        return Math.pow(Math.max(0.0, squares) / degrees, 0.5);
     }                   // felet mot anpassningen som den står
 
     public Double reach(double[] x) {
-        return null;
+
+        Double leverage = getLeverage(x);
+        if (leverage == null) return null;
+
+        return Math.pow(1.0 + leverage, 0.5) - 1.0;
     }                   // hur långt utanför sin data den ombeds gå
 
     public Double variance(double[] x) {
-        return null;
+
+        Double leverage = getLeverage(x);
+        if (leverage == null) return null;
+
+        double sigma = sigma();
+        if (sigma == Double.POSITIVE_INFINITY) {
+            return null;
+        }
+
+        return sigma * sigma * (1.0 + leverage);
     }                   // osäkerheten i en gissning vid x, i y i kvadrat
 
+    private Double getLeverage(double[] x) {
+        if (x.length != size || weight < size + 1) {
+            return null;
+        }
+
+        double[] solved = solveSymmetric(regularized(), x);
+
+        if (solved == null) {
+            return null;
+        }
+
+        double leverageInit = 0.0;
+        for (int xi = 0; xi < x.length; xi++) {
+            leverageInit += x[xi] * solved[xi];
+        }
+        return Math.max(0.0, leverageInit);
+    }
+
     public Double uncertainty(double[] x) {
-        return null;
+        Double variance = variance(x);
+        return variance == null ? null : Math.pow(variance, 0.5);
     }                   // samma som standardavvikelse
 }
