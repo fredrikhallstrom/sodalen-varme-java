@@ -94,7 +94,10 @@ Där Python och Java skiljer sig:
 ## Ordning
 
 1. `EnsembleTest.TheRecords` och `TheStandIn`: records utan logik och
-   `Forecasts.outdoorFromForecast`.
+   `Forecasts.outdoorFromForecast`. Sista raden i
+   `anEmptyCombinedHasNothingInIt` frågar `combine` med en tom lista och
+   väntar sig `new Combined()`, så den blir grön först med de tre första
+   raderna i `combine` (punkt 5): `offered`, `if not offered`, tom `Combined`.
 2. `EnsembleTest.Scoring`: konstruktorn, `retune`, `observe` och vad den gör
    med `weight`, `bias` och `covariance`.
 3. `EnsembleTest.TheWeighting`: matrisen och `weights`.
