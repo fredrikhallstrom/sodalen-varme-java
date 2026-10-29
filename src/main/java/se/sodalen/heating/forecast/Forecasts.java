@@ -2,6 +2,7 @@ package se.sodalen.heating.forecast;
 
 import java.util.List;
 
+import se.sodalen.heating.house.Conditions;
 import se.sodalen.heating.house.Forecast;
 
 // Det forecast.py säger om den hämtade prognosen, alltså steg 7:s lista av luckor.
@@ -14,6 +15,17 @@ public final class Forecasts {
     }
 
     public static Double outdoorFromForecast(List<Forecast> forecast) {
-        return null;
+        if (forecast == null || forecast.isEmpty()) {
+            return null;
+        }
+
+        double ahead = forecast.getFirst().hours();
+        Conditions conditions = forecast.getFirst().conditions();
+
+        if (ahead > STAND_IN_HOURS) {
+            return null;
+        }
+
+        return conditions == null ? null : forecast.getFirst().conditions().outdoor();
     }                   // prognosens temperatur för nu, i stället för en utegivare som saknas; null utan svar
 }
