@@ -11,6 +11,7 @@ när Pythonversionen har ändrats - då visar testerna vad som skiljer.
 from __future__ import annotations
 
 import csv
+import dataclasses
 import math
 import random
 import shutil
@@ -960,6 +961,221 @@ def forecast(core, rng) -> None:
     print("08-prognosen: rader med " + ", ".join(f"{found[key]} {counts[key]}" for key in found))
 
 
+def _bins(bins) -> str:
+    """Lådorna som "ute,behov,timmar,spridning,sektorer,vind,ålder,vikt,status" med | emellan."""
+    return "|".join(_list([b.outdoor, b.need, b.hours, b.spread]) + f",{b.sectors}," + _list([b.wind, b.age, b.weight])
+                    + f",{b.status}" for b in bins)
+
+
+def _outdoors(values) -> str:
+    """Utetemperaturer med / emellan; tomt för en tom följd."""
+    return "/".join(_num(v) for v in values)
+
+
+def curvefit(core, rng) -> None:
+    cf, pts, c = core.curvefit, core.points, core.curve
+    found = {"bent": "böj sökt", "moved": "böjd kurva", "held": "böjgräns som höll emot", "rejected": "avvikare",
+             "coldout": "avvikare = kallaste gröna", "reach0": "räckvidd 0", "under": "balans under design",
+             "reach1": "räckvidd 1", "shorter": "kedja kortare än de gröna", "unsteerable": "ej styrbar",
+             "empty": "inga lådor", "gap57": "maxGreenGap 5 eller 7", "same": "gröna i samma låda"}
+    counts = {key: 0 for key in found}
+
+    def inputs():
+        """Vad fit_curve får: mest husets vanliga värden, ibland något annat."""
+        room = rng.choice([21.0] * 8 + [20.0, 22.0, 23.0, round(rng.uniform(20.0, 23.0), 1)])
+        design = rng.choice([-18.0] * 8 + [-15.0, -20.0, -22.0, round(rng.uniform(-22.0, -15.0), 1)])
+        r = rng.random()
+        balance = design - round(rng.uniform(0.0, 4.0), 1) if r < 0.06 else rng.choice([20.0, 21.0, 20.5]) \
+            if r < 0.12 else round(rng.uniform(8.0, 14.0), 2)
+        kw = dict(room=room, design_outdoor=design, balance=balance, slope_prior=round(rng.uniform(0.5, 1.3), 3),
+                  curvature=0.8 if rng.random() < 0.7 else rng.choice([0.6, 0.65, 0.7, 0.75, 0.9, 1.0, 1.1,
+                                                                        round(rng.uniform(0.6, 1.1), 3)]),
+                  bend_limit=2.0 if rng.random() < 0.6 else rng.choice([0.0, 0.5, 1.0, 3.0]))
+        if rng.random() < 0.25:
+            kw["prior_weight"] = rng.choice([0.0, 0.1, 1.0])
+        if rng.random() < 0.6:
+            kw["max_green_gap"] = rng.choice([2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+        return kw
+
+    def truth(kw):
+        """Den sanna kurvan lådorna mäts från: lutningen oftast nära priorn och balansen nära
+        passningens, ibland en bit ifrån."""
+        balance = kw["balance"] + rng.choice([0.0, 0.0, rng.uniform(-1.5, 1.5), rng.uniform(-3.0, 3.0)])
+        away = rng.choice([rng.uniform(-0.1, 0.1), rng.uniform(-0.2, 0.2), rng.uniform(-0.8, 0.8)])
+        slope, curvature = round(min(1.3, max(0.5, kw["slope_prior"] + away)), 3), round(rng.uniform(0.55, 1.2), 3)
+        return lambda outdoor: c.supply(outdoor, kw["room"], kw["design_outdoor"], slope, curvature, balance) - kw["room"]
+
+    def outdoors():
+        """2-12 utetemperaturer mellan -20 och +12: en stege, ibland gles, eller på måfå."""
+        if rng.random() < 0.6:
+            count, gap = rng.randint(2, 12), rng.choice([2.0, 2.0, 2.0, 4.0, 6.0])
+            start = rng.choice([rng.uniform(4.0, 12.0), rng.uniform(4.0, 12.0), min(12.0, -20.0 + gap * (count - 1))])
+            return [round(start - gap * i, 2) for i in range(count) if start - gap * i >= -20.0]
+        return [round(rng.uniform(-20.0, 12.0), 2) for _ in range(rng.randint(2, 12))]
+
+    def table_bins(kw, need):
+        """En tabell fylld som test_points.py:s dots: timmarna fördelade på delar av dygnet, brus på
+        behovet, lite vind och ibland en blekning mitt i."""
+        table, noise = pts.PointTable(), rng.choice([0.0, rng.uniform(0.0, 0.5), rng.uniform(0.0, 2.0)])
+        wind, temps = rng.choice([0.0, 0.0, rng.uniform(0.0, 8.0)]), outdoors()
+        faded = rng.randint(1, len(temps)) if rng.random() < 0.3 else None
+        for i, outdoor in enumerate(temps, 1):
+            hours = rng.choice([rng.uniform(2.0, 6.0), rng.uniform(6.0, 24.0), rng.uniform(24.0, 60.0),
+                                rng.uniform(24.0, 60.0)])
+            sectors = rng.choice([(0, 1, 2, 3)] * 6 + [(0, 1, 2), (1, 2, 3), (0, 2, 3), (0, 1), (0,)])
+            parts = rng.randint(1, 3)
+            for sector in sectors:
+                for _ in range(parts):
+                    at = round(outdoor + rng.uniform(-0.3, 0.3), 2)
+                    table.add(outdoor=at, need=round(need(at) + rng.uniform(-noise, noise), 3),
+                              wind=round(wind + rng.uniform(0.0, 2.0), 1) if wind else 0.0,
+                              hour=sector * 6.0 + rng.uniform(0.0, 5.9), hours=round(hours / len(sectors) / parts, 3))
+            if i == faded:
+                table.fade(rng.uniform(1.0, 500.0), rng.choice([60 * 24.0, 30 * 24.0, rng.uniform(24.0, 3000.0)]))
+        return table.bins()
+
+    def direct_bins(kw, need, greenless):
+        """Lådor byggda för hand: nollvikter, bråkvikter, flera gröna i samma låda, gröna långt isär
+        och en ensam grön vid -12. Ordningen blandad."""
+        pattern = "random" if greenless else rng.choice(["random", "random", "same", "gaps", "lone"])
+        if pattern == "same":
+            low = 2.0 * math.floor(rng.uniform(-18.0, 10.0) / 2.0)
+            temps = [low + rng.uniform(0.0, 2.0) for _ in range(rng.randint(2, 3))] \
+                + [rng.uniform(-20.0, 12.0) for _ in range(rng.randint(0, 4))]
+        elif pattern == "gaps":
+            temps = rng.sample([10.0, 4.0, -2.0, -8.0, -14.0, -20.0], rng.randint(2, 5))
+        elif pattern == "lone":
+            temps = [-12.0] + [4.0 + 2.0 * i for i in range(rng.randint(1, 3))] \
+                + [rng.uniform(-10.0, 2.0) for _ in range(rng.randint(0, 2))]
+        else:
+            temps = [rng.uniform(-22.0, 14.0) for _ in range(rng.randint(1, 10))]
+        bins = []
+        for i, outdoor in enumerate(temps):
+            if greenless:
+                status = rng.choice([pts.RED, pts.YELLOW])
+            elif pattern == "lone":
+                status = pts.GREEN if i == 0 or outdoor >= 4.0 else rng.choice([pts.RED, pts.YELLOW])
+            elif pattern == "random":
+                status = rng.choice([pts.RED, pts.YELLOW, pts.GREEN, pts.GREEN])
+            else:
+                status = pts.GREEN if rng.random() < 0.85 else pts.YELLOW
+            if status == pts.RED:
+                weight = 0.0
+            elif status == pts.YELLOW:
+                weight = rng.choice([round(rng.uniform(0.01, 0.5), 4), round(rng.uniform(0.01, 0.5), 4), 0.0])
+            else:
+                weight = rng.choice([1.0] * 4 + [round(rng.uniform(0.01, 1.0), 4), 0.0])
+            bins.append(pts.Bin(outdoor=round(outdoor, 3), need=round(need(outdoor) + rng.uniform(-2.0, 2.0), 4),
+                                hours=round(rng.uniform(0.5, 80.0), 2), spread=round(rng.uniform(0.0, 3.0), 3),
+                                sectors=rng.randint(0, 4), wind=round(rng.choice([0.0, rng.uniform(0.0, 10.0)]), 2),
+                                age=rng.choice([0.0, round(rng.uniform(0.0, 2000.0), 1)]), status=status,
+                                weight=weight))
+        rng.shuffle(bins)
+        return bins
+
+    def knocked(bins):
+        """Ett eller två behov knuffade 4-12 K, som en kamin tänd en hel låda; ibland just den kallaste
+        gröna. Sant när det var den."""
+        heard = [i for i, b in enumerate(bins) if b.weight > 0.0]
+        greens = [i for i in heard if bins[i].status == pts.GREEN]
+        coldest = bool(greens) and rng.random() < 0.3
+        picks = [min(greens, key=lambda i: bins[i].outdoor)] if coldest \
+            else rng.sample(heard, min(len(heard), rng.choice([1, 1, 2])))
+        for i in picks:
+            shift = rng.choice([1.0, 1.0, -1.0]) * rng.uniform(4.0, 12.0)
+            bins[i] = dataclasses.replace(bins[i], need=round(bins[i].need + shift, 4))
+        return coldest
+
+    def inside(bins, kw):
+        """Går fit_curve:s väg en gång till med modulens egna hjälpare: vad som hände på vägen, och om
+        något avgjordes med en hårsmån (edge) - då kan Java svara annorlunda och fallet dras om."""
+        room, design, balance = kw["room"], kw["design_outdoor"], kw["balance"]
+        gap, curvature, limit = kw.get("max_green_gap"), kw["curvature"], kw["bend_limit"]
+        usable = [b for b in bins if b.weight > 0.0]
+        greens = [b for b in usable if b.status == pts.GREEN]
+        chain = greens if gap is None else cf.green_chain(usable, gap)
+        if gap is not None:
+            usable = [b for b in usable if b.status != pts.GREEN or any(b is x for x in chain)]
+        coldest = min((b.outdoor for b in chain), default=None)
+        reach = 0.0
+        if coldest is not None and balance > design:
+            reach = min(1.0, max(0.0, (balance - coldest) / (balance - design)))
+        shape = cf._Shape(room, design, balance)
+        prior = cf._Prior(shape, kw["slope_prior"], kw.get("prior_weight", 0.25), reach)
+        edge = False
+
+        def solved(items, bend):
+            """Lutningen som _Prior.solve ger; en klämning på gränsen är en hårsmån (vid räckvidd 0
+            är low == high och klämningen alltid säker)."""
+            nonlocal edge
+            low, high = prior.low, prior.high
+            prior.low, prior.high = -math.inf, math.inf
+            raw = prior.solve(items, bend)
+            prior.low, prior.high = low, high
+            edge = edge or (reach > 0.0 and min(abs(raw - low), abs(raw - high)) < 1e-9)
+            return prior.solve(items, bend)
+
+        slope = solved(usable, curvature)
+        misses = [abs(b.need - shape.excess(b.outdoor, slope, curvature)) for b in usable]
+        edge = edge or any(abs(miss - cf.OUTLIER) < 1e-6 for miss in misses)
+        outliers = [b for b, miss in zip(usable, misses) if miss > cf.OUTLIER]
+        if outliers:
+            usable = [b for b in usable if b not in outliers]
+            slope = solved(usable, curvature)
+        bent, held = curvature, False
+        searched = limit > 0.0 and coldest is not None and coldest <= cf.BEND_COLD
+        if searched:
+            costs = {curvature: prior.cost(usable, slope, curvature)}  # referensen; på rutnätet samma kostnad
+            for bend in cf.BEND_GRID:
+                moved = abs(c.middle_deviation(room, design, solved(usable, bend), balance, bend, curvature))
+                edge = edge or abs(moved - limit) < 1e-9
+                if moved <= limit:
+                    cost = prior.cost(usable, prior.solve(usable, bend), bend) + cf.BEND_PRIOR * (bend - curvature) ** 2
+                    costs.setdefault(bend, cost)
+            ordered = sorted(costs.values())
+            edge = edge or (len(ordered) > 1 and ordered[1] - ordered[0] <= 1e-7 * max(1.0, ordered[1]))
+            bent = cf._bend(usable, shape, prior, curvature, limit)[0]
+            held = cf._bend(usable, shape, prior, curvature, math.inf)[0] != bent
+        return dict(reach=reach, greens=len(greens), chain=len(chain), used=len(usable), bent=bent,
+                    searched=searched, held=held, edge=edge)
+
+    rows, rerolled = [], 0
+    while len(rows) < 400:
+        kw, kind = inputs(), rng.choice(["table"] * 27 + ["direct"] * 9 + ["greenless"] * 3 + ["empty"])
+        need = truth(kw)
+        bins = [] if kind == "empty" else table_bins(kw, need) if kind == "table" \
+            else direct_bins(kw, need, kind == "greenless")
+        coldout = bool(bins) and rng.random() < 0.3 and knocked(bins)
+        seen = inside(bins, kw)
+        if seen["edge"] or len(set(bins)) < len(bins):
+            rerolled += 1
+            continue
+        result = cf.fit_curve(bins, **kw)
+        assert (result.curvature, result.used) == (seen["bent"], seen["used"])
+        chain_gap = rng.choice([0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+        linked = cf.green_chain(bins, chain_gap)
+        gap, green_bins = kw.get("max_green_gap"), [b for b in bins if b.status == pts.GREEN]
+        hits = dict(bent=seen["searched"], moved=result.curvature != kw["curvature"], held=seen["held"],
+                    rejected=bool(result.rejected), coldout=coldout, reach0=seen["reach"] == 0.0,
+                    under=kw["balance"] <= kw["design_outdoor"], reach1=seen["reach"] == 1.0,
+                    shorter=gap is not None and seen["chain"] < seen["greens"], unsteerable=not result.steerable,
+                    empty=not bins, gap57=gap in (5.0, 7.0),
+                    same=len({pts.bin_index(b.outdoor) for b in green_bins}) < len(green_bins))
+        for key, hit in hits.items():
+            counts[key] += hit
+        rows.append([_bins(bins), kw["room"], kw["design_outdoor"], kw["balance"], kw["slope_prior"], kw["curvature"],
+                     kw["bend_limit"], kw.get("prior_weight", 0.25), gap,
+                     result.slope, result.curvature, result.coldest_green, result.used, _outdoors(result.rejected),
+                     _outdoors(result.chain), _bool(result.steerable), chain_gap,
+                     _outdoors(b.outdoor for b in linked)])
+    write("09-kurvanpassningen", "curve_fit.csv",
+          ["bins", "room", "designOutdoor", "balance", "slopePrior", "curvature", "bendLimit", "priorWeight",
+           "maxGreenGap", "slope", "fitCurvature", "coldestGreen", "used", "rejected", "chain", "steerable",
+           "chainGap", "greenChain"], rows)
+    print("09-kurvanpassningen: rader med " + ", ".join(f"{found[key]} {counts[key]}" for key in found)
+          + f"; {rerolled} fall omdragna (hårsmån)")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -975,10 +1191,11 @@ def main() -> int:
     estimators(core, rng)
     thermal(core, rng)
     forecast(core, rng)
+    curvefit(core, rng)
     for step, module in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
                          ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
                          ("06-skattarna", "estimators"), ("07-husmodellen", "thermal"),
-                         ("08-prognosen", "forecast")):
+                         ("08-prognosen", "forecast"), ("09-kurvanpassningen", "curvefit")):
         copy_source(heating, step, module)
     return 0
 

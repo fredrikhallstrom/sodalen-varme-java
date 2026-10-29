@@ -64,7 +64,7 @@ höjer du siffran, och då kommer nästa stegs tester med. Varje stegmapp har:
 | 6 | Skattarna: medelvärden och regression | `estimators.py` | tester klara |
 | 7 | Husmodellen: hur fort huset svalnar, och när vädret vänder | `thermal.py` | tester klara |
 | 8 | Prognosen: flera väderkällor vägda ihop | `forecast.py` | tester klara |
-| 9 | Kurvanpassningen | `curvefit.py` | |
+| 9 | Kurvanpassningen | `curvefit.py` | tester klara |
 | 10 | Brännaren: olja, pellets och reläerna | `burner.py` | |
 | 11 | Modellen: inställningar, lärt tillstånd, in- och utdata | `model.py` | |
 | 12 | Regulatorn, i flera delsteg | `controller.py` | |
