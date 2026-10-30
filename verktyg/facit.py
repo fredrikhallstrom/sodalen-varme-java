@@ -1176,6 +1176,137 @@ def curvefit(core, rng) -> None:
           + f"; {rerolled} fall omdragna (hårsmån)")
 
 
+def _typed(value) -> str:
+    """Ett sparat värde med sin typ: s text, f flyttal, i heltal, b bool, n None (tomt efter kolon)."""
+    if value is None:
+        return "n:"
+    if isinstance(value, bool):
+        return f"b:{value}"
+    if isinstance(value, int):
+        return f"i:{value}"
+    if isinstance(value, float):
+        return f"f:{value!r}"
+    return f"s:{value}"
+
+
+def _stored(stored: dict | None) -> str | None:
+    """Det sparade som "nyckel=typ:värde" med | emellan i insättningsordning; tomt för None, {} för en tom dict."""
+    if stored is None:
+        return None
+    return "|".join(f"{key}={_typed(value)}" for key, value in stored.items()) or "{}"
+
+
+def burner(core, rng) -> None:
+    b = core.burner
+    numeric = ("start_lead", "off_delay", "burnout_seconds", "sweep_lead_seconds", "alarm_below")
+    unknown, garbage = ("unknown", "foo", "sweep_lead"), ("inte ett tal", "1,5", "3600s", "tre")
+    found = {"odd": "okänd brännare", "noburner": "brännare None", "nostored": "stored None", "empty": "tom dict",
+             "path": "control_path", "unknownkey": "okänd nyckel", "garbage": "skräptext", "nothing": "None-värde",
+             "truth": "bool-värde", "callnum": "call_for_heat som tal"}
+    counts = {key: 0 for key in found}
+
+    def number():
+        """Ett sparat tal som det kan se ut: flyttal, heltal, siffror som text, skräp, None eller bool."""
+        r = rng.random()
+        if r < 0.30:
+            return round(rng.uniform(0.0, 8000.0), rng.choice([0, 1, 2]))
+        if r < 0.50:
+            return rng.randint(0, 8000)
+        if r < 0.70:
+            return rng.choice(["3600", "1.5e3", "-2", "+5", "0.5", "900", "60.0", "2e2"])
+        if r < 0.85:
+            return rng.choice(garbage)
+        if r < 0.93:
+            return None
+        return rng.choice([True, False])
+
+    def value(key):
+        if key == "call_for_heat":
+            return rng.choice(["on", "off", "ON", "Off", "yes"] * 3 + [1, 0, 1.0, 0.5])
+        if key == "control_path":
+            return rng.choice(["control", "power", "both", "none"])
+        return number()
+
+    def stored():
+        """Inget sparat, en tom dict, eller 1-5 av de kända nycklarna, ibland med en okänd bland dem."""
+        r = rng.random()
+        if r < 0.09:
+            return None
+        if r < 0.14:
+            return {}
+        keys = rng.sample(numeric + ("call_for_heat", "control_path"), rng.randint(1, 5))
+        if rng.random() < 0.25:
+            keys.insert(rng.randrange(len(keys) + 1), rng.choice(unknown))
+        return {key: value(key) for key in keys}
+
+    def which():
+        """Brännaren: oftast en av de två, ibland en okänd text eller None."""
+        r = rng.random()
+        if r < 0.42:
+            return b.BURNER_PELLETS
+        if r < 0.80:
+            return b.BURNER_OIL
+        if r < 0.94:
+            return rng.choice(["ved", "Pellets", "OIL", "olja", "gas"])
+        return None
+
+    rows = []
+    for _ in range(150):
+        name, kept = which(), stored()
+        out, items = b.burner_settings(name, kept), list((kept or {}).items())
+        hits = dict(odd=name is not None and name not in b.BURNERS, noburner=name is None, nostored=kept is None,
+                    empty=kept == {}, path=any(k == "control_path" for k, _ in items),
+                    unknownkey=any(k in unknown for k, _ in items),
+                    garbage=any(k in numeric and v in garbage for k, v in items),
+                    nothing=any(k in numeric and v is None for k, v in items),
+                    truth=any(k in numeric and isinstance(v, bool) for k, v in items),
+                    callnum=any(k == "call_for_heat" and not isinstance(v, str) for k, v in items))
+        for key, hit in hits.items():
+            counts[key] += hit
+        rows.append([name, _stored(kept), out["start_lead"], out["off_delay"], out["burnout_seconds"],
+                     out["sweep_lead_seconds"], out["call_for_heat"], out["alarm_below"], out.get("control_path")])
+    write("10-brannaren", "burner_settings.csv",
+          ["burner", "stored", "startLead", "offDelay", "burnoutSeconds", "sweepLeadSeconds", "callForHeat",
+           "alarmBelow", "controlPath"], rows)
+    print("10-brannaren: rader med " + ", ".join(f"{found[key]} {counts[key]}" for key in found))
+
+    paths = (b.PATH_CONTROL, b.PATH_POWER, b.PATH_BOTH, "CONTROL", "none")
+    rows = [[path, _bool(hc), _bool(hp), _bool(sw), _bool(oh), *map(_bool, b.relays_in_use(path, hc, hp, sw, oh))]
+            for path in paths for hc in (True, False) for hp in (True, False) for sw in (True, False)
+            for oh in (True, False)]
+    write("10-brannaren", "relays_in_use.csv",
+          ["controlPath", "hasControl", "hasPower", "sweeping", "overheated", "control", "power"], rows)
+
+    texts = ("on", "off", "ON", "On", "oN", "OFF", "yes", "true", "1", "sluten", "on_", "0")
+    rows = [[text, _bool(call), _bool(b.relay_calls_for_heat(text, call))] for text in texts for call in (True, False)]
+    write("10-brannaren", "relay_calls.csv", ["callForHeat", "call", "calls"], rows)
+
+    branches = {"wanted": "wanted", "atonce": "at_once", "nocontrol": "utan styrkabel", "nopower": "utan huvudström",
+                "cut": "utbrunnen (>=)", "burnout": "burnout", "exact": "stopped = burnout",
+                "exactcut": "varav fram till >="}
+    counts = {key: 0 for key in branches}
+    rows = []
+    for _ in range(160):
+        wanted, at_once = rng.random() < 0.22, rng.random() < 0.18
+        has_control, has_power = rng.random() < 0.75, rng.random() < 0.68
+        burnout = rng.choice([0.0, 60.0, 900.0, 1800.0, round(rng.uniform(1.0, 5000.0), 1)])
+        stopped = rng.choice([0.0, -round(rng.uniform(0.5, 900.0), 1), round(rng.uniform(0.0, 5000.0), 1),
+                              burnout, burnout, burnout - 0.5, burnout + 0.5])
+        plan = b.plan_heat_source(wanted=wanted, seconds_stopped=stopped, has_control=has_control,
+                                  has_power=has_power, burnout_seconds=burnout, at_once=at_once)
+        branch = ("wanted" if wanted else "atonce" if at_once else "nocontrol" if not has_control
+                  else "nopower" if not has_power else "cut" if stopped >= burnout else "burnout")
+        counts[branch] += 1
+        counts["exact"] += stopped == burnout
+        counts["exactcut"] += stopped == burnout and branch == "cut"
+        rows.append([_bool(wanted), stopped, _bool(has_control), _bool(has_power), burnout, _bool(at_once),
+                     _bool(plan.control), _bool(plan.power), _bool(plan.burning_out)])
+    write("10-brannaren", "plan_heat_source.csv",
+          ["wanted", "secondsStopped", "hasControl", "hasPower", "burnoutSeconds", "atOnce", "control", "power",
+           "burningOut"], rows)
+    print("10-brannaren: grenar " + ", ".join(f"{branches[key]} {counts[key]}" for key in branches))
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -1192,10 +1323,12 @@ def main() -> int:
     thermal(core, rng)
     forecast(core, rng)
     curvefit(core, rng)
+    burner(core, rng)
     for step, module in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
                          ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
                          ("06-skattarna", "estimators"), ("07-husmodellen", "thermal"),
-                         ("08-prognosen", "forecast"), ("09-kurvanpassningen", "curvefit")):
+                         ("08-prognosen", "forecast"), ("09-kurvanpassningen", "curvefit"),
+                         ("10-brannaren", "burner")):
         copy_source(heating, step, module)
     return 0
 
