@@ -62,7 +62,7 @@ public final class Fitting {
     // Lägger kurvan genom tabellens prickar. Med balansen given är lutningen det enda prickarna får
     public static CurveFit fitCurve(List<Bin> bins, double room, double designOutdoor, double balance,
                                     double slopePrior, double curvature, double bendLimit) {
-        return fitCurve(bins, room, designOutdoor, balance, slopePrior, curvature, bendLimit, 0.25, null);
+        return fitCurve(bins, room, designOutdoor, balance, slopePrior, curvature, bendLimit, DEFAULT_PRIOR_WEIGHT, null);
     }                   // Pythons standardvärden: prior_weight 0.25 och max_green_gap None
 
     public static CurveFit fitCurve(List<Bin> bins, double room, double designOutdoor, double balance,
@@ -126,19 +126,20 @@ public final class Fitting {
             }
         }
 
-        kept.clear();
         if (!outliers.isEmpty()) {
             kept = usable.stream()
                     .filter(b -> !outliers.contains(b))
                     .toList();
             slope = prior.solve(kept, curvature);
+            usable = kept;
         }
-
-        usable = kept;
-
         double bent = curvature;
+
         if (bendLimit > 0.0 && coldest != null && coldest <= BEND_COLD) {
             Bent result = bend(usable, shape, prior, curvature, bendLimit);
+
+            bent = result.curvature();
+            slope = result.slope();
         }
 
         return new CurveFit(slope, balance, bent, coldest, usable.size(), outliers.stream().map(Bin::outdoor).toList(), greens.stream()
@@ -151,12 +152,13 @@ public final class Fitting {
         Double bestCost = prior.cost(bins, best.slope(), reference);
 
         for (Double curvature : BEND_GRID) {
-            double slope = prior.solve(bins, reference);
+            double slope = prior.solve(bins, curvature);
             double moved = Curve.middleDeviation(shape.room, shape.design, slope, shape.balance, curvature, reference);
             if (Math.abs(moved) > limit) {
                 continue;
             }
-            double cost = prior.cost(bins, slope, reference) + BEND_PRIOR * Math.pow(curvature - reference, 2);
+            double away = curvature - reference;
+            double cost = prior.cost(bins, slope, curvature) + BEND_PRIOR * away * away;
             if (cost < bestCost) {
                 best = new Bent(curvature, slope);
                 bestCost = cost;
@@ -166,20 +168,10 @@ public final class Fitting {
     }
 
 
-    private static class Shape {
-
-        private Double room;
-        private Double design;
-        private Double balance;
-
-        private Shape(Double room, Double designOutdoor, Double balance) {
-            this.room = room;
-            this.design = designOutdoor;
-            this.balance = balance;
-        }
+private record Shape(double room, double design, double balance) {
 
         private Double perSlope(Double outdoor, Double curvature) {
-            return Curve.supply(outdoor, room, design, 1.0, curvature, balance);
+            return Curve.supply(outdoor, room, design, 1.0, curvature, balance) - room;
         }
 
         private Double excess(Double outdoor, Double slope, Double curvature) {
@@ -188,27 +180,25 @@ public final class Fitting {
     }
 
     private static class Prior {
-        private Shape shape;
-        private Double slope;
-        private Double weight;
-        private Double number;
-        private Double allowed;
-        private double low;
-        private double high;
+        private final Shape shape;
+        private final Double slope;
+        private final Double weight;
+        private final double low;
+        private final double high;
 
         private Prior(Shape shape, Double slope, Double weight, Double reach) {
             this.shape = shape;
             this.slope = slope;
             this.weight = weight;
-            this.number = reach;
-            this.allowed = reach;
-            this.low = reach;
-            this.high = reach;
+            Double number = Curve.evrNumber(slope, shape.room, shape.design);
+            Double allowed = MAX_NUMBER_SHIFT * reach;
+            this.low = Curve.evrSlope(Math.max(0.0, number - allowed), shape.room, shape.design);
+            this.high = Curve.evrSlope(number + allowed, shape.room, shape.design);
         }
 
         private double solve(List<Bin> bins, Double curvature) {
             double reference = shape.perSlope((shape.balance + shape.design) / 2.0, curvature);
-            double strength = weight + reference * reference;
+            double strength = weight * reference * reference;
             double top = strength * slope;
             double bottom = strength;
 
@@ -217,7 +207,7 @@ public final class Fitting {
                 top += bin.weight() * bin.need() * per;
                 bottom += bin.weight() * per * per;
             }
-            slope = top / bottom > 0.0 ? bottom : slope;
+            double slope = bottom > 0.0 ? top / bottom : this.slope;
             return Math.min(high, Math.max(low, slope));
         }
 
