@@ -1307,6 +1307,592 @@ def burner(core, rng) -> None:
     print("10-brannaren: grenar " + ", ".join(f"{branches[key]} {counts[key]}" for key in branches))
 
 
+def _typed2(value) -> str:
+    """Steg 10:s typer (s f i b n) och tre till för det skattarna sparar: l en lista av tal med ,
+    emellan (tomt = None, nan/inf som Python skriver dem), m en matris med raderna skilda av / och
+    talen i en rad av ,, d en nästlad dict en nivå ned med & mellan posterna och ~ i stället för =
+    (d:{} = tom). Texter får inte innehålla något av tecknen ; | = & ~ , /."""
+    if isinstance(value, dict):
+        assert not any(isinstance(v, dict) for v in value.values()), "en nivå räcker"
+        return "d:" + ("&".join(f"{key}~{_typed2(v)}" for key, v in value.items()) or "{}")
+    if isinstance(value, (list, tuple)):
+        if any(isinstance(v, (list, tuple)) for v in value):
+            return "m:" + "/".join(_floats(row) for row in value)
+        return "l:" + _floats(value)
+    return _typed(value)
+
+
+def _stored2(stored: dict | None) -> str | None:
+    """Som _stored, med _typed2:s typer: tomt för None, {} för en tom dict."""
+    if stored is None:
+        return None
+    return "|".join(f"{key}={_typed2(value)}" for key, value in stored.items()) or "{}"
+
+
+def _same(a, b) -> bool:
+    """Pythons ==, fast med nan lika med nan."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    if isinstance(a, float) and isinstance(b, float) and math.isnan(a) and math.isnan(b):
+        return True
+    return a == b
+
+
+def model(core, rng) -> None:
+    m, p, st, est = core.model, core.parsing, core.sunterm, core.estimators
+    Tuning, LearnedState, SunTerm = m.Tuning, m.LearnedState, st.SunTerm
+    step = "11-modellen"
+    # Vad en sparad fil kan innehålla i stället för ett tal: det as_float och bool() får svälja.
+    flat_junk = [None, "abc", "", " 2 ", "21.5", "1e3", True, False, math.nan, math.inf, [], [1.0, 2.0]]
+    junk = flat_junk + [{}, {"a": 1.0}]
+
+    def spoil(value, broken, deep=False):
+        """Värdet, eller med sannolikheten broken något annat; deep = inne i en nästlad dict,
+        där en dict till inte går att skriva."""
+        if rng.random() >= broken:
+            return value
+        return rng.choice(flat_junk if deep else junk)
+
+    # --- parsing.csv -------------------------------------------------------------------------------
+    texts = ["21.5", " 2 ", "1e3", "abc", "", "nan", "inf", "-inf", "-999", "NaN", "Infinity", "-Infinity",
+             "1e400", "-1e400", "+5", "2.", ".5", "1,5", "21.5 C", "true", "False", " ", "1e", "-50", "110",
+             "110.5", "125", "125.5", "115.75", "1.5e3", "-2.5E-3"]
+    numbers = [0, 1, -1, 21, -273, -999, 110, 125, 0.0, 21.5, -273.0, -273.15, -50.0, -50.001, -49.999, 110.0,
+               110.001, 110.5, 115.75, 125.0, 125.001, 125.5, 1e-9, -1e-9, 1e300, -1e300, math.nan, math.inf,
+               -math.inf]
+    values = [None, True, False, [], [1.0, 2.0], {}, {"a": 1.0}] + numbers + texts
+    while len(values) < 120:
+        r = rng.random()
+        if r < 0.4:
+            values.append(round(rng.uniform(-300.0, 300.0), rng.choice([0, 1, 2, 3])))
+        elif r < 0.6:
+            values.append(rng.randint(-300, 300))
+        elif r < 0.9:
+            values.append(rng.choice([str(round(rng.uniform(-60.0, 130.0), rng.choice([0, 1, 2]))),
+                                      str(rng.randint(-60, 130)), f"{rng.uniform(-60.0, 130.0):.3e}"]))
+        else:
+            values.append(rng.choice([None, True, False, math.nan]))
+    rows = []
+    for value in values:
+        fallback = rng.choice([0.0, 0.0, -1.0, 7.5, 99.0])
+        rows.append([_typed2(value), fallback, p.as_float(value, fallback), p.as_optional_float(value),
+                     p.plausible_temperature(value), p.plausible_temperature(value, p.WIRED_MAX_C)])
+    write(step, "parsing.csv",
+          ["value", "fallback", "as_float", "as_optional_float", "plausible_default", "plausible_125"], rows)
+
+    # --- outdoor_in_use.csv ------------------------------------------------------------------------
+    names = ["ute_nord", "ute_syd", "ute_vast", "ute_ost", "garage", "brygga"]
+    cases = [[], [("ute_nord", None)], [("ute_nord", 5.0)], [("ute_nord", 1.0), ("ute_syd", 1.0)],
+             [("ute_nord", None), ("ute_syd", 1.0), ("ute_vast", 1.0)],
+             [("ute_nord", 2.0), ("ute_syd", -3.5), ("ute_vast", None)],
+             [("ute_nord", -20.0), ("ute_syd", -20.0000001)], [("ute_nord", None), ("ute_syd", None)],
+             [("ute_nord", 10.0), ("ute_syd", 9.9999), ("ute_vast", 9.9999)], [("ute_nord", -50.0), ("ute_syd", 110.0)],
+             [("ute_nord", 3.0), ("ute_syd", None), ("ute_vast", 3.0), ("ute_ost", 2.0)]]
+    while len(cases) < 40:
+        readings, seen = [], []
+        for key in rng.sample(names, rng.randint(1, 5)):
+            r = rng.random()
+            if r < 0.25:
+                value = None
+            elif r < 0.4 and seen:
+                value = rng.choice(seen)
+            else:
+                value = round(rng.uniform(-30.0, 30.0), rng.choice([0, 1, 2]))
+            if value is not None:
+                seen.append(value)
+            readings.append((key, value))
+        cases.append(readings)
+    write(step, "outdoor_in_use.csv", ["readings", "index"],
+          [[_stored2(dict(readings)), p.outdoor_in_use(readings)] for readings in cases])
+
+    # --- estimator_dicts.csv -----------------------------------------------------------------------
+    kinds = ("ewma", "dutywatch", "regression", "multi")
+
+    def built(kind):
+        """Ett objekt byggt med steg 6:s operationer: (objektet, sekunder/horisont, size, ops)."""
+        ops = []
+        if kind == "ewma":
+            seconds = rng.choice([600.0, 3600.0, 10800.0, 0.0, round(rng.uniform(10.0, 5000.0), 1)])
+            thing = est.Ewma(seconds)
+            for _ in range(rng.randint(0, 8)):
+                sample = None if rng.random() < 0.1 else round(rng.uniform(-20.0, 80.0), 2)
+                dt = rng.choice([30.0, 30.0, 0.0, round(rng.uniform(1.0, 3000.0), 1)])
+                thing.update(sample, dt)
+                ops.append("update," + _list([sample, dt]))
+            return thing, seconds, None, ops
+        if kind == "dutywatch":
+            seconds = rng.choice([3600.0, 259200.0, 0.0, round(rng.uniform(60.0, 86400.0), 1)])
+            thing = est.DutyWatch(seconds)
+            for _ in range(rng.randint(0, 12)):
+                held = rng.choice([True, False, None, True])
+                dt = rng.choice([30.0, 30.0, 0.0, round(rng.uniform(1.0, 7200.0), 1)])
+                thing.update(held, dt)
+                ops.append(_bool(held) + "," + _num(dt))
+            return thing, seconds, None, ops
+        if kind == "regression":
+            horizon = rng.choice([3600.0, 259200.0, 43200.0, 0.0, round(rng.uniform(60.0, 1e6), 1)])
+            thing = est.Regression(horizon)
+            for _ in range(rng.randint(0, 15)):
+                dt = rng.choice([30.0, 60.0, 0.0, round(rng.uniform(1.0, 3600.0), 1)])
+                if rng.random() < 0.15:
+                    thing.fade(dt)
+                    ops.append("fade," + _num(dt))
+                else:
+                    x, y = round(rng.uniform(-1.0, 2.0), 3), round(rng.uniform(-5.0, 5.0), 3)
+                    thing.add(x, y, dt)
+                    ops.append("add," + _list([x, y, dt]))
+            return thing, horizon, None, ops
+        size = rng.randint(2, 4)
+        horizon = rng.choice([0.0, 1814400.0, 86400.0, round(rng.uniform(5.0, 100.0), 1)])
+        thing = est.MultiRegression(size=size, horizon=horizon)
+        truth = [round(rng.uniform(-3.0, 3.0), 2) for _ in range(size)]
+        for _ in range(rng.randint(0, 12)):
+            x = [1.0] + [round(rng.uniform(-2.0, 2.0), 3) for _ in range(size - 1)]
+            y = round(sum(t * xi for t, xi in zip(truth, x)) + rng.uniform(-0.5, 0.5), 3)
+            dt = rng.choice([1.0, 1.0, 0.0, round(rng.uniform(0.1, 5.0), 2)])
+            thing.add(x, y, dt)
+            ops.append("add," + _list([y, dt] + x))
+        return thing, horizon, size, ops
+
+    def restored(kind, data, seconds, size):
+        if kind == "ewma":
+            return est.Ewma.from_dict(data, seconds)
+        if kind == "dutywatch":
+            return est.DutyWatch.from_dict(data, seconds)
+        if kind == "regression":
+            return est.Regression.from_dict(data, seconds)
+        return est.MultiRegression.from_dict(data, size, seconds)
+
+    def junk_dict(kind, size):
+        """Något en äldre version sparade eller en fil som skadats: nycklar som saknas, None, text,
+        fel typ, och för MultiRegression fel size och fel form på xx/xy."""
+        if kind == "ewma":
+            d = {"seconds": spoil(rng.choice([600.0, 7.0]), 0.3),
+                 "value": spoil(round(rng.uniform(-20.0, 80.0), 2), 0.5)}
+        elif kind == "dutywatch":
+            d = {"seconds": spoil(3600.0, 0.3), "share": spoil(round(rng.random(), 3), 0.5),
+                 "weight": spoil(round(rng.uniform(-10.0, 1e5), 1), 0.5)}
+        elif kind == "regression":
+            d = {"horizon": spoil(3600.0, 0.3)}
+            for key in ("weight", "sum_x", "sum_y", "sum_xx", "sum_xy"):
+                d[key] = spoil(round(rng.uniform(-5.0, 50.0), 3), 0.35)
+        else:
+            xx = [[round(rng.uniform(-5.0, 5.0), 2) for _ in range(size)] for _ in range(size)]
+            xy = [round(rng.uniform(-5.0, 5.0), 2) for _ in range(size)]
+            r = rng.random()
+            if r < 0.1:
+                xx = rng.choice(junk)
+            elif r < 0.2:
+                xx = xx[:-1]
+            elif r < 0.3:
+                xx[0] = xx[0][:-1]
+            elif r < 0.4:
+                xx[0][0] = None
+            r = rng.random()
+            if r < 0.1:
+                xy = rng.choice(junk)
+            elif r < 0.2:
+                xy = xy + [1.0]
+            elif r < 0.25:
+                xy[0] = None
+            d = {"size": rng.choice([size] * 4 + [size + 1, size - 1, float(size), str(size), f"{size}.0", None,
+                                                  True, [float(size)]]),
+                 "horizon": spoil(3600.0, 0.3), "weight": spoil(round(rng.uniform(0.0, 50.0), 3), 0.3),
+                 "xx": xx, "xy": xy, "residual": spoil(round(rng.uniform(0.0, 5.0), 3), 0.3),
+                 "residual_data": spoil(round(rng.uniform(0.0, 5.0), 3), 0.3),
+                 "yy": spoil(round(rng.uniform(0.0, 50.0), 3), 0.3)}
+        for key in list(d):
+            if rng.random() < 0.15:
+                del d[key]
+        if rng.random() < 0.1:
+            d["foo"] = 1
+        return d
+
+    rows = []
+    for kind in kinds:
+        for _ in range(15):
+            thing, seconds, size, ops = built(kind)
+            d = thing.as_dict()
+            back = restored(kind, d, seconds, size).as_dict()
+            rows.append([kind, seconds, size, "|".join(ops), _stored2(d), _bool(_same(back, d)), _stored2(d),
+                         _stored2(back)])
+    good = est.MultiRegression(size=3, horizon=0.0)
+    for x, y in (([1.0, 0.5, -1.0], 2.0), ([1.0, -0.5, 0.25], 0.5), ([1.0, 1.5, 1.0], 3.5), ([1.0, 0.0, 2.0], 1.0)):
+        good.add(x, y, 1.0)
+    good = good.as_dict()
+    # size som text eller flyttal tas (int("3"), int(3.0)); "3.0" och True gör inte det. yy saknat är
+    # None; residual_data saknat är residual, också när residual är skräp.
+    fixed_multi = [dict(good, size="3"), dict(good, size=3.0), dict(good, size="3.0"), dict(good, size=True),
+                   {k: v for k, v in good.items() if k != "yy"},
+                   {k: v for k, v in good.items() if k != "residual_data"},
+                   dict({k: v for k, v in good.items() if k != "residual_data"}, residual="abc")]
+    for kind in kinds:
+        fixed = [None, {}] + (fixed_multi if kind == "multi" else [])
+        for i in range(len(fixed) + 11):
+            size = (3 if i < len(fixed) else rng.randint(2, 4)) if kind == "multi" else None
+            seconds = rng.choice([600.0, 3600.0, 259200.0, 0.0])
+            d = fixed[i] if i < len(fixed) else junk_dict(kind, size)
+            back = restored(kind, d, seconds, size).as_dict()
+            rows.append([kind, seconds, size, None, None, None, _stored2(d), _stored2(back)])
+    write(step, "estimator_dicts.csv",
+          ["kind", "seconds", "size", "ops", "as_dict", "roundtrip_equal", "stored", "restored_as_dict"], rows)
+
+    # --- sun_term.csv ------------------------------------------------------------------------------
+    HOUR = st.HOUR_SECONDS
+
+    def sun_series(hours_total, pieces, broken, dark, noise, skies=None):
+        """Observationer (behov, ljus, fel, dt) genom ett väder som test_sunterm.py:s, timme för
+        timme eller i delar av timmar, ibland med skräp; avrundade först så att det som skrivs är
+        det Python såg."""
+        coef = (round(rng.uniform(-0.5, 0.5), 2), round(rng.uniform(0.0, 0.6), 2),
+                round(rng.uniform(-8.0, -3.0), 1), round(rng.uniform(0.0, 6.0), 1))
+        swing, period = rng.uniform(0.0, 0.4), rng.uniform(20.0, 60.0)
+        if skies is None:
+            skies = [rng.choice([0.0, rng.uniform(0.0, 1.0), rng.uniform(0.0, 1.0)]) for _ in range(rng.randint(1, 7))]
+        obs, hour = [], 0.0
+        while hour < hours_total and len(obs) < 400:
+            parts = rng.choice(pieces)
+            for part in range(parts):
+                if len(obs) >= 400:
+                    break
+                at = hour + part / parts
+                demand = 0.45 + swing * math.sin(2.0 * math.pi * at / period)
+                clock = at % 24.0
+                sky = 0.0 if dark else skies[int(at // 24) % len(skies)]
+                light = 0.4 * sky * math.sin(math.pi * (clock - 7.0) / 10.0) if 7.0 < clock < 17.0 else 0.0
+                error = coef[0] + coef[1] * demand + (coef[2] + coef[3] * demand) * light + rng.gauss(0.0, noise)
+                dt = HOUR / parts
+                if rng.random() < 0.04:
+                    dt = rng.choice([2000.0, 1000.0, 30.0])
+                sample = [round(demand, 3), round(light, 3), round(error, 3), dt]
+                if rng.random() < broken:
+                    index = rng.randrange(4)
+                    sample[index] = rng.choice([None, math.nan, math.inf, -math.inf]
+                                               + ([0.0, -30.0] if index == 3 else [-0.05] if index == 1 else []))
+                obs.append(tuple(sample))
+            hour += 1.0
+        return obs
+
+    def observed(obs):
+        term = SunTerm()
+        for demand, light, error, dt in obs:
+            term.observe(demand, light, error, dt)
+        return term
+
+    def _observations(obs):
+        """"behov,ljus,fel,dt" med | emellan; None som n, nan och inf som Python skriver dem."""
+        return "|".join(",".join("n" if v is None else repr(float(v)) for v in o) for o in obs)
+
+    def perturbed(d):
+        """as_dict med ett fel i, som en fil från en annan version."""
+        d = {"fit": dict(d["fit"]), "hour": list(d["hour"]), "hours": d["hours"], "sunny_hours": d["sunny_hours"]}
+        what = rng.choice(["short_hour", "none_in_hour", "hour_text", "hour_nan", "hours_text", "sunny_float",
+                           "fit_empty", "fit_size", "fit_ragged", "no_hours", "hours_none", "fit_none"])
+        if what == "short_hour":
+            d["hour"] = d["hour"][:3]
+        elif what == "none_in_hour":
+            d["hour"][1] = None
+        elif what == "hour_text":
+            d["hour"] = "abc"
+        elif what == "hour_nan":
+            d["hour"][2] = math.nan
+        elif what == "hours_text":
+            d["hours"] = str(d["hours"])
+        elif what == "sunny_float":
+            d["sunny_hours"] = d["sunny_hours"] + 0.9
+        elif what == "fit_empty":
+            d["fit"] = {}
+        elif what == "fit_size":
+            d["fit"]["size"] = 3
+        elif what == "fit_ragged":
+            d["fit"]["xx"] = [list(row) for row in d["fit"]["xx"]][:-1]
+        elif what == "no_hours":
+            del d["hours"]
+        elif what == "hours_none":
+            d["hours"] = None
+        else:
+            d["fit"] = None
+        return d
+
+    demands = (0.3, 0.45, 0.6, 0.95)
+    plans = [("short", 5), ("edge", 6), ("long", 8), ("split", 6), ("dark", 3), ("broken", 5)]
+    rows, good_fit, ready = [], None, 0
+
+    def sun_row(obs, stored, horizon):
+        term = observed(obs)
+        d = term.as_dict()
+        answers = []
+        for demand in demands:
+            answers += [term.per_kw(demand), term.spread(demand), term.share(demand),
+                        _bool(term.known(demand, 0.05, 0.1)), term.correction(demand, 0.2)]
+        roundtrip = _same(SunTerm.from_dict(d, st.HORIZON_SECONDS).as_dict(), d)
+        stored = d if stored == "same" else perturbed(d) if stored == "perturbed" else stored
+        back = SunTerm.from_dict(stored, horizon).as_dict()
+        return term, [_observations(obs), term.hours, term.sunny_hours] + answers \
+            + [_stored2(d), _bool(roundtrip), horizon, _stored2(stored), _stored2(back)]
+
+    for kind, count in plans:
+        for i in range(count):
+            if kind == "short":
+                obs = sun_series(rng.randint(1, 10), [1], 0.1, False, 0.05)
+            elif kind == "edge":
+                obs = sun_series(rng.choice([47, 48, 49, 50, 72]), [1], 0.0, False, 0.05,
+                                 skies=rng.choice([[0.06], [0.0, 0.07], [0.05, 0.0, 0.0], [0.3], [0.0, 0.0, 0.055]]))
+            elif kind == "long":
+                obs = sun_series(rng.randint(100, 400), [1], 0.0, False, rng.choice([0.0, 0.05, 0.2]))
+            elif kind == "split":
+                obs = sun_series(400, [1, 1, 2, 3, 4], 0.0, False, 0.05)
+            elif kind == "dark":
+                obs = sun_series(rng.randint(50, 200), [1], 0.0, True, 0.05)
+            else:
+                obs = sun_series(rng.randint(60, 300), [1, 1, 2], 0.12, False, 0.05)
+            horizon = rng.choice([st.HORIZON_SECONDS] * 3 + [86400.0, 0.0])
+            term, row = sun_row(obs, "perturbed" if i % 3 == 2 else "same", horizon)
+            ready += term.per_kw(0.5) is not None
+            if term.fit.weight > 0.0 and good_fit is None:
+                good_fit = term.fit.as_dict()
+            rows.append(row)
+    for stored in (None, {}, {"hour": "abc"}, {"fit": "abc", "hours": 5},
+                   {"fit": good_fit, "hours": "12", "sunny_hours": 7.9},
+                   {"fit": good_fit, "hours": -2.5, "sunny_hours": None},
+                   {"hour": [1.0, 2.0, 3.0, 4.0], "hours": 3}, {"hour": [1.0, 2.0, 3.0, math.inf], "fit": good_fit}):
+        rows.append(sun_row([], stored, rng.choice([st.HORIZON_SECONDS, 86400.0]))[1])
+    head = ["observations", "hours", "sunny_hours"]
+    for demand in demands:
+        head += [f"{name}_{demand}" for name in ("per_kw", "spread", "share", "known", "correction")]
+    write(step, "sun_term.csv", head + ["as_dict", "roundtrip_equal", "restore_horizon", "stored", "restored_as_dict"],
+          rows)
+    print(f"11-modellen: sun_term med svar i {ready} rader")
+
+    # --- tuning_from_dict.csv ----------------------------------------------------------------------
+    field_names = [f.name for f in dataclasses.fields(Tuning)]
+    bool_names = [f.name for f in dataclasses.fields(Tuning) if isinstance(f.default, bool)]
+    default = Tuning()
+    unknown = ["unknown", "roomTarget", "room-target", "design_span", "clamp_flow", "Room_Target",
+               "gone_in_a_later_version", "ROOM_TARGET"]
+    numbers_as_text = ["21.5", " 2 ", "1e3", "-0.5", "+7", "2.", ".5", "1.5e3"]
+    garbage = ["abc", "", "1,5", "true", "False", "21.5 C", "x"]
+
+    def float_value():
+        r = rng.random()
+        if r < 0.35:
+            return round(rng.uniform(-50.0, 100000.0), rng.choice([0, 1, 2, 3]))
+        if r < 0.45:
+            return rng.randint(-50, 100000)
+        if r < 0.6:
+            return rng.choice(numbers_as_text)
+        if r < 0.7:
+            return rng.choice(garbage)
+        if r < 0.78:
+            return None
+        if r < 0.86:
+            return rng.choice([True, False])
+        if r < 0.94:
+            return rng.choice([[], [1.0], {}, {"a": 1.0}])
+        return rng.choice([math.nan, math.inf, -math.inf])
+
+    def bool_value():
+        return rng.choice([True, False, True, False, "false", "true", "False", "0", "1", "", 0, 1, 0.0, 2.5, -1,
+                           None, [], [1.0], {}, {"a": 1.0}, math.nan])
+
+    def differs(tuning):
+        return {name: getattr(tuning, name) for name in field_names
+                if not _same(getattr(tuning, name), getattr(default, name))}
+
+    def tuning_row(data, base):
+        base_tuning = None if base is None else m.tuning_from_dict(base)
+        result = m.tuning_from_dict(data, base_tuning)
+        return [_stored2(base), _stored2(data), _stored2(differs(result))]
+
+    rows = [tuning_row({}, None), tuning_row(None, None),
+            tuning_row({"curve_slope": 1.1, "gone_in_a_later_version": 3, "flow_max": "x"}, None),
+            tuning_row({key: 1 for key in unknown}, None),
+            tuning_row({name: "false" for name in bool_names}, None),
+            tuning_row({name: 0 for name in bool_names}, None)]
+    while len(rows) < 120:
+        keys = rng.sample(field_names, rng.choice([0, 1, 2, 3, 4, 5, 6, 8]))
+        if rng.random() < 0.4:
+            for key in rng.sample(unknown, rng.randint(1, 2)):
+                keys.insert(rng.randint(0, len(keys)), key)
+        data = {key: bool_value() if key in bool_names else float_value() for key in keys}
+        base = None
+        if rng.random() < 0.4:
+            base = {key: rng.choice([True, False]) if key in bool_names else round(rng.uniform(-10.0, 1000.0), 2)
+                    for key in rng.sample(field_names, rng.randint(1, 4))}
+        rows.append(tuning_row(data, base))
+    write(step, "tuning_from_dict.csv", ["base", "data", "result"], rows)
+
+    # --- learned_state.csv -------------------------------------------------------------------------
+    keys = list(LearnedState().as_dict())
+    optional = ("bend", "last_flow_setpoint", "last_flow", "position", "resume_position", "last_feedforward", "last_kp")
+    flags = ("warm_stopped", "summer_stopped", "coasting", "recovering", "boiler_overheated", "needs_reseed")
+    filters = ("delta_scale", "delta_filter", "outdoor", "outdoor_summer", "indoor", "indoor_slow", "sun_heat")
+    fits = ("curve_fit", "level_fit", "gain_fit")
+    seconds_choices = [600.0, 3600.0, 43200.0, 86400.0, 259200.0, 1814400.0]
+    overridable = {"gain_reference": lambda: round(rng.uniform(0.1, 1.0), 2),
+                   "room_target": lambda: rng.choice([21.0, 20.0, 22.0, 23.5]),
+                   "design_outdoor": lambda: rng.choice([-18.0, -15.0, -22.0]),
+                   "curve_slope": lambda: round(rng.uniform(0.3, 2.2), 2),
+                   "curve_curvature": lambda: rng.choice([0.8, 0.6, 1.0, 1.1]),
+                   "slope_min": lambda: rng.choice([0.2, 0.5, 1.0]), "slope_max": lambda: rng.choice([2.0, 1.2, 1.0]),
+                   "balance_shift_min": lambda: rng.choice([-14.0, -5.0, -2.0, 0.0]),
+                   "balance_shift_max": lambda: rng.choice([3.0, 0.0, 1.0, 10.0])}
+    for name in ("delta_expected_horizon_seconds", "delta_filter_seconds", "learn_horizon_seconds",
+                 "sun_term_horizon_seconds", "outdoor_filter_seconds", "learn_level_horizon_seconds",
+                 "gain_horizon_seconds", "starved_horizon_seconds", "summer_filter_seconds", "sun_heat_seconds",
+                 "indoor_filter_seconds", "indoor_slow_filter_seconds"):
+        overridable[name] = lambda: rng.choice(seconds_choices + [round(rng.uniform(60.0, 1e6), 1)])
+
+    def overrides():
+        if rng.random() < 0.5:
+            return None
+        return {name: overridable[name]() for name in rng.sample(sorted(overridable), rng.randint(1, 4))}
+
+    def ewma_stored(broken):
+        return spoil({"seconds": spoil(rng.choice([600.0, 3600.0, 7.0]), broken, True),
+                      "value": spoil(rng.choice([None, round(rng.uniform(-20.0, 60.0), 2)]), broken, True)}, broken / 2)
+
+    def duty_stored(broken):
+        return spoil({"seconds": 259200.0, "share": spoil(rng.choice([None, round(rng.random(), 3)]), broken, True),
+                      "weight": spoil(round(rng.uniform(0.0, 1e5), 1), broken, True)}, broken / 2)
+
+    def regression_stored(broken, adds=None):
+        fit = est.Regression(259200.0)
+        for _ in range(rng.randint(0, 5) if adds is None else adds):
+            fit.add(round(rng.uniform(-0.3, 1.3), 4), round(rng.uniform(-3.0, 3.0), 2), 30.0)
+        return spoil({key: spoil(value, broken, True) for key, value in fit.as_dict().items()}, broken / 2)
+
+    def sun_stored(broken):
+        d = {"fit": rng.choice([None, "abc", []]),
+             "hour": spoil([round(rng.uniform(0.0, 3600.0), 1) for _ in range(4)], broken, True),
+             "hours": spoil(rng.randint(0, 300), broken, True), "sunny_hours": spoil(rng.randint(0, 50), broken, True)}
+        if rng.random() < 0.5:
+            del d["fit"]
+        return spoil(d, broken / 2)
+
+    def modern(broken):
+        """En fil som as_dict skriver den, med sannolikheten broken för varje värde att vara skräp
+        och för varje nyckel att saknas."""
+        d = {}
+        for key in keys:
+            if rng.random() < broken:
+                continue
+            if key in filters:
+                d[key] = ewma_stored(broken)
+            elif key == "starved":
+                d[key] = duty_stored(broken)
+            elif key in fits:
+                d[key] = regression_stored(broken)
+            elif key == "sun_term":
+                d[key] = sun_stored(broken)
+            elif key in flags:
+                d[key] = spoil(rng.choice([True, False]), broken)
+            elif key in optional:
+                d[key] = spoil(rng.choice([None, round(rng.uniform(-5.0, 60.0), 2)]), broken)
+            elif key == "learning_hold_cell":
+                d[key] = spoil(rng.choice([None, "7:1", "12:3", ""]), broken)
+            elif key == "cold_after":
+                d[key] = spoil(rng.choice([None, "sweep", "coast", "shortfall", "off"]), broken)
+            else:
+                d[key] = spoil(round(rng.uniform(-10.0, 2e6), rng.choice([0, 1, 2])), broken)
+        return d
+
+    def old_offset():
+        """Sparat före 2026-09-29: curve_offset i stället för balance_shift."""
+        d = modern(0.05) if rng.random() < 0.5 else {}
+        d.pop("balance_shift", None)
+        if rng.random() < 0.2:
+            d["balance_shift"] = rng.choice([None, "abc", -4.0])
+        d["curve_offset"] = rng.choice([-5.89, 9.0, 0.0, round(rng.uniform(-15.0, 15.0), 2), "abc", None, "3.5"])
+        d["slope_trim"] = rng.choice([0.0, round(rng.uniform(-0.5, 0.5), 3), "x"])
+        r = rng.random()
+        if r < 0.6:
+            d["curve_fit"] = regression_stored(0.0, rng.randint(1, 3))
+        elif r < 0.75:
+            d.pop("curve_fit", None)
+        elif r < 0.9:
+            d["curve_fit"] = {"weight": 0.0}
+        else:
+            d["curve_fit"] = "abc"
+        return d
+
+    def old_shortfall():
+        """Sparat den morgonen (ba43a64) det hette shortfall_cold och seconds_shortfall_cold."""
+        d = modern(0.05) if rng.random() < 0.4 else {}
+        d.pop("cold_after", None)
+        d.pop("seconds_cold", None)
+        d["shortfall_cold"] = rng.choice([True, False, "false", "", 0, 1, None, 1.0, 0.0, [], [1.0]])
+        if rng.random() < 0.5:
+            d["seconds_shortfall_cold"] = rng.choice([120.0, round(rng.uniform(0.0, 1e5), 1), "abc", None, "77"])
+        r = rng.random()
+        if r < 0.3:
+            d["cold_after"] = rng.choice(["sweep", "coast", "shortfall", "off"])
+        elif r < 0.5:
+            d["cold_after"] = rng.choice([None, "foo", 3, "", "SWEEP", []])
+        if rng.random() < 0.3:
+            d["seconds_cold"] = rng.choice([None, "abc", 55.0, 0, "12"])
+        return d
+
+    def learned_row(stored, tuning_overrides):
+        tuning = m.tuning_from_dict(tuning_overrides) if tuning_overrides else Tuning()
+        state = LearnedState.from_dict(stored, tuning)
+        d = state.as_dict()
+        back = LearnedState.from_dict(d, tuning).as_dict()
+        return [_stored2(tuning_overrides), _stored2(stored), state.balance_shift, state.slope_trim, state.bend,
+                state.process_gain, state.cold_after, state.seconds_cold, state.seconds_since_off,
+                _bool(state.needs_reseed), _bool(state.warm_stopped), state.delta_scale.seconds,
+                state.curve_fit.horizon, state.sun_term.fit.horizon, state.outdoor.value, ",".join(d),
+                _bool(_same(back, d))]
+
+    fit = est.Regression(Tuning().learn_horizon_seconds)
+    fit.add(10.0 / 39.0, 0.0, 30.0)
+    rows = [learned_row(stored, None) for stored in
+            (None, {}, {"shortfall_cold": True, "seconds_shortfall_cold": 120.0},
+             {"balance_shift": -4.0, "curve_offset": 9.0},
+             {"curve_offset": -5.89, "slope_trim": 0.0, "curve_fit": fit.as_dict()})]
+    for maker, count in ((lambda: None, 2), (dict, 2), (lambda: modern(0.0), 35), (lambda: modern(0.15), 25),
+                         (lambda: modern(0.5), 20), (old_offset, 32), (old_shortfall, 29)):
+        for _ in range(count):
+            rows.append(learned_row(maker(), overrides()))
+    write(step, "learned_state.csv",
+          ["tuning", "stored", "balance_shift", "slope_trim", "bend", "process_gain", "cold_after", "seconds_cold",
+           "seconds_since_off", "needs_reseed", "warm_stopped", "delta_scale_seconds", "curve_fit_horizon",
+           "sun_term_horizon", "outdoor_value", "as_dict_keys", "roundtrip_equal"], rows)
+
+    # --- balance_from_offset.csv och effective_curvature.csv ---------------------------------------
+    curve_keys = ("room_target", "design_outdoor", "curve_slope", "curve_curvature", "slope_min", "slope_max",
+                  "balance_shift_min", "balance_shift_max")
+    rows = []
+    for _ in range(80):
+        tuning_overrides = {key: overridable[key]() for key in curve_keys if rng.random() < 0.3}
+        tuning = m.tuning_from_dict(tuning_overrides)
+        offset = rng.choice([0.0, -5.89, 9.0, -20.0, 25.0, round(rng.uniform(-15.0, 15.0), 2)])
+        slope_trim = rng.choice([0.0, 0.0, 0.0, round(rng.uniform(-0.8, 0.8), 3)])
+        state = LearnedState()
+        state.slope_trim = slope_trim
+        fit_add = None
+        if rng.random() < 0.6:
+            fit_add = (round(rng.uniform(-0.2, 1.3), 4), round(rng.uniform(-3.0, 3.0), 2), rng.choice([30.0, 0.0, 3600.0]))
+            state.curve_fit.add(*fit_add)
+        rows.append([offset, slope_trim, None if fit_add is None else _list(fit_add), state.curve_fit.weight,
+                     state.curve_fit.mean_x] + [getattr(tuning, key) for key in curve_keys]
+                    + [m._balance_from_offset(offset, state, tuning)])
+    write(step, "balance_from_offset.csv",
+          ["offset", "slope_trim", "fit_add", "fit_weight", "fit_mean_x", *curve_keys, "balance"], rows)
+
+    rows = []
+    for bend in (None, None, None, 0.0, 1.1, 0.8, -0.5, 2.0, round(rng.uniform(0.5, 1.5), 3)):
+        for curvature in rng.sample([0.8, 0.6, 1.0, 1.1, round(rng.uniform(0.5, 1.5), 3)], 2):
+            state = LearnedState()
+            state.bend = bend
+            tuning = Tuning()
+            tuning.curve_curvature = curvature
+            rows.append([bend, curvature, m.effective_curvature(tuning, state)])
+    write(step, "effective_curvature.csv", ["bend", "curve_curvature", "effective"], rows)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -1324,12 +1910,14 @@ def main() -> int:
     forecast(core, rng)
     curvefit(core, rng)
     burner(core, rng)
-    for step, module in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
-                         ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
-                         ("06-skattarna", "estimators"), ("07-husmodellen", "thermal"),
-                         ("08-prognosen", "forecast"), ("09-kurvanpassningen", "curvefit"),
-                         ("10-brannaren", "burner")):
-        copy_source(heating, step, module)
+    model(core, rng)  # sist: stegen före får samma slumptal som förut
+    for step, *modules in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
+                           ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
+                           ("06-skattarna", "estimators"), ("07-husmodellen", "thermal"),
+                           ("08-prognosen", "forecast"), ("09-kurvanpassningen", "curvefit"),
+                           ("10-brannaren", "burner"), ("11-modellen", "model", "parsing", "sunterm")):
+        for module in modules:
+            copy_source(heating, step, module)
     return 0
 
 

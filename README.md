@@ -66,7 +66,7 @@ höjer du siffran, och då kommer nästa stegs tester med. Varje stegmapp har:
 | 8 | Prognosen: flera väderkällor vägda ihop | `forecast.py` | tester klara |
 | 9 | Kurvanpassningen | `curvefit.py` | tester klara |
 | 10 | Brännaren: olja, pellets och reläerna | `burner.py` | tester klara |
-| 11 | Modellen: inställningar, lärt tillstånd, in- och utdata | `model.py` | |
+| 11 | Modellen: inställningar, lärt tillstånd, in- och utdata | `model.py` | tester klara |
 | 12 | Regulatorn, i flera delsteg | `controller.py` | |
 | 13 | Skuggläge: tjänst på sodalenservern som jämför med HA live | | |
 
