@@ -2,10 +2,7 @@ package se.sodalen.heating.curve;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.IntStream;
 
 // bestämma, och böjen söks först när betrodda prickar når in i kylan.
@@ -98,7 +95,6 @@ public final class Fitting {
         }
 
 
-
         List<Double> greens = new ArrayList<>();
         for (Bin bin : chain) {
             greens.add(bin.outdoor());
@@ -149,7 +145,7 @@ public final class Fitting {
 
     private static Bent bend(List<Bin> bins, Shape shape, Prior prior, Double reference, Double limit) {
         Bent best = new Bent(reference, prior.solve(bins, reference));
-        Double bestCost = prior.cost(bins, best.slope(), reference);
+        double bestCost = prior.cost(bins, best.slope(), reference);
 
         for (Double curvature : BEND_GRID) {
             double slope = prior.solve(bins, curvature);
@@ -168,7 +164,7 @@ public final class Fitting {
     }
 
 
-private record Shape(double room, double design, double balance) {
+    private record Shape(double room, double design, double balance) {
 
         private Double perSlope(Double outdoor, Double curvature) {
             return Curve.supply(outdoor, room, design, 1.0, curvature, balance) - room;

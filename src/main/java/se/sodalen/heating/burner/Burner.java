@@ -1,6 +1,5 @@
 package se.sodalen.heating.burner;
 
-import javax.security.sasl.RealmCallback;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
