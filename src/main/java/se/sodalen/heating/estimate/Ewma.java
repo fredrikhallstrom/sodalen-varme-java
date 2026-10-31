@@ -30,8 +30,8 @@ public final class Ewma {
         return Map.of("seconds", seconds, "value", value);
     }
 
-    public static Ewma from_Dict(Map<String, Double> data) {
-        return new Ewma(data.get("seconds"), data.get("value"));
+    public static Ewma fromDict(Map<String, ?> data, double seconds) {
+        return new Ewma(seconds, (Double) data.get("value"));
     }
 
     public Double update(Double sample, double dt) {
@@ -46,5 +46,10 @@ public final class Ewma {
         double alpha = ratio < 30 ? 1.0 - Math.pow(Math.E, -ratio) : 1.0;
         value += alpha * (sample - value);
         return value;
-    }                   // det nya värdet; null som prov lämnar det som det var
+    }// det nya värdet; null som prov lämnar det som det var
+
+    public void setSeconds(double seconds) {
+        this.seconds = seconds;
+    }
 }
+

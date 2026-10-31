@@ -44,4 +44,8 @@ public final class DutyWatch {
         share = share == null ? sample : share + (sample -share) * dt / total;
         weight = total;
     }                   // null: gick inte att avgöra, men tiden går ändå
+
+    private void setSeconds(double seconds) {
+        this.seconds = seconds;
+    }
 }

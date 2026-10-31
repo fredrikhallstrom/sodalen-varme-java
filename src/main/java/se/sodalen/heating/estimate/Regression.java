@@ -89,4 +89,8 @@ public final class Regression {
         double slope = covariance / variance;
         return new Fit(meanY() - slope * meanX(), slope, true);
     }
+
+    private void setHorizon(double horizon) {
+        this.horizon = horizon;
+    }
 }
