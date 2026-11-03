@@ -1,6 +1,9 @@
 package se.sodalen.heating.estimate;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
+
+import static se.sodalen.heating.helper.Parsing.*;
 
 // Minsta kvadrat-linjen y = a + b*x genom prov som bleknar med tiden.
 public final class Regression {
@@ -16,12 +19,13 @@ public final class Regression {
     }                   // tidskonstanten för glömskan, sekunder
 
     public static Regression fromDict(Map<String, ?> data, double horizon) {
+        data = asMapping(data);
         Regression result = new Regression(horizon);
-        result.weight = (double) data.get("weight");
-        result.sumX = (double) data.get("sumX");
-        result.sumY = (double) data.get("sumY");
-        result.sumXx = (double) data.get("sumXx");
-        result.sumXy = (double) data.get("sumXy");
+        result.weight = asFloat(data.get("weight"), 0.0);
+        result.sumX = asFloat(data.get("sum_x"), 0.0);
+        result.sumY = asFloat(data.get("sum_y"), 0.0);
+        result.sumXx = asFloat(data.get("sum_xx"), 0.0);
+        result.sumXy = asFloat(data.get("sum_xy"), 0.0);
         return result;
     }
 
@@ -107,13 +111,13 @@ public final class Regression {
     }
 
     public Map<String, Object> asDict() {
-        return Map.of(
-                "horizon", horizon,
-                "weight", weight,
-                "sumX", sumX,
-                "sumY", sumY,
-                "sumXx", sumXx,
-                "sumXy", sumXy
-                );
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("horizon", horizon);
+        result.put("weight", weight);
+        result.put("sum_x", sumX);
+        result.put("sum_y", sumY);
+        result.put("sum_xx", sumXx);
+        result.put("sum_xy", sumXy);
+        return result;
     }
 }

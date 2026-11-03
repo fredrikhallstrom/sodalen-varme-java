@@ -1,12 +1,18 @@
 package se.sodalen.heating.house;
 
+import se.sodalen.heating.curve.Curve;
+
+import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import static se.sodalen.heating.helper.Parsing.asMapping;
 
 // Datamodellens konstanter och de tre fria funktionerna i model.py. Inget Home Assistant här:
 // allt reglerlagen behöver bor i de här klasserna, så att hela regleringen kan provas utan HA.
@@ -95,6 +101,9 @@ public final class Model {
         COLD_CAUSES = Collections.unmodifiableList(Arrays.asList("sweep", "coast", "shortfall", "off"));
     }
 
+    private Model() {
+    }
+
     private static Map<String, Double> roleDefault(double weight, double stratification) {
         Map<String, Double> values = new LinkedHashMap<>();
         values.put("weight", weight);
@@ -102,30 +111,139 @@ public final class Model {
         return Collections.unmodifiableMap(values);
     }
 
-    private Model() {
-    }
-
     public static double effectiveCurvature(Tuning tuning, LearnedState state) {
-        return 0.0;
+        return state.bend == null ? tuning.curveCurvature : state.bend;
     }                   // böjen kurvan går på: state.bend när tabellen lärt en, annars tuning.curveCurvature
 
     static double balanceFromOffset(double offset, LearnedState state, Tuning tuning) {
-        return 0.0;
+
+        double room = tuning.roomTarget;
+        double outdoor = OFFSET_ERA_OUTDOOR;
+
+        if (state.curveFit.weight() > 0.0) {
+            outdoor = room - state.curveFit.meanX() * tuning.designSpan();
+        }
+
+        double slope = Math.min(tuning.slopeMax, Math.max(tuning.slopeMin, tuning.curveSlope + state.slopeTrim));
+        double demand = Math.max(0.0, room - outdoor) / tuning.designSpan();
+
+        double old = Math.pow(room + slope * tuning.designSpan() * demand, OFFSET_ERA_CURVATURE + offset);
+        double balance = Curve.balanceThrough(outdoor, old, room, tuning.designOutdoor, slope, tuning.curveCurvature);
+
+        return Math.min(tuning.balanceShiftMax, Math.max(tuning.balanceShiftMin, balance - room));
     }                   // balansförskjutningen som ger huset det tillopp det hade där offseten lärdes; Pythons _balance_from_offset, rad för rad
 
     public static Tuning tuningFromDict(Map<String, ?> data) {
-        return null;
+        return tuningFromDict(data, null);
     }                   // Pythons standardvärde: base None
 
     public static Tuning tuningFromDict(Map<String, ?> data, Tuning base) {
-        return null;
-    }                   // en ny Tuning kopierad från base (eller standard); okända nycklar hoppas över, bool-fält får bool(value), resten float(value) eller hoppas över
+        data = asMapping(data);
+        Tuning source = base == null ? new Tuning() : base;
+        Tuning copy = new Tuning();
+
+        Field[] fields = Tuning.class.getFields();
+        Map<String, Field> byPython = new HashMap<>();
+        for (Field field : fields) {
+            byPython.put(pythonName(field.getName()), field);      // "room_target" → fältet roomTarget
+        }
+
+        try {
+            for (Field field : fields) {
+                Object value = field.get(source);
+                field.set(copy, value);
+            }
+
+            for (Map.Entry<String, ?> entry : data.entrySet()) {
+                Field field = byPython.get(entry.getKey());
+                if (field == null) {
+                    continue;                                       // if key not in values: continue
+                }
+                if (field.getType() == boolean.class) {
+                    field.setBoolean(copy, truthy(entry.getValue()));   // bool(value)
+                    continue;
+                }
+                Double number = pythonFloat(entry.getValue());      // float(value), nan och inf med
+                if (number == null) {
+                    continue;                                       // except (TypeError, ValueError): continue
+                }
+                field.setDouble(copy, number);
+            }
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(e);
+        }
+
+        return copy;                   // en ny Tuning kopierad från base (eller standard); okända nycklar hoppas över, bool-fält får bool(value), resten float(value) eller hoppas över
+    }
 
     public static String fieldName(String pythonName) {
-        return null;
-    }                   // "room_target" → "roomTarget": dela på '_', versal efter varje
+        if (pythonName == null) {
+            return null;
+        }
+        String[] parts = pythonName.split("_");
+        String first = String.valueOf(parts[0]);
+        StringBuilder sb = new StringBuilder();
+        sb.append(first);
+        for (int i = 1; i < parts.length; i++) {
+            if (!parts[i].isBlank()) {
+                sb.append(parts[i].substring(0, 1).toUpperCase()).append(parts[i].substring(1));
+            }
+        }
+
+        return sb.toString();
+    }                // "room_target" → "roomTarget": dela på '_', versal efter varje
+
+    private static String pythonName(String javaName) {
+        StringBuilder sb = new StringBuilder();
+        for (char c : javaName.toCharArray()) {
+            if (Character.isUpperCase(c)) {
+                sb.append('_').append(Character.toLowerCase(c));
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static Double pythonFloat(Object value) {
+        if (value instanceof Boolean b) {
+            return b ? 1.0 : 0.0;
+        }
+        if (value instanceof Number n) {
+            return n.doubleValue();
+        }
+        if (!(value instanceof String s)) {
+            return null;                                            // None, listor och kartor: TypeError
+        }
+        String text = s.strip();
+        String unsigned = text.startsWith("-") || text.startsWith("+") ? text.substring(1) : text;
+        if (unsigned.equalsIgnoreCase("nan")) {
+            return Double.NaN;
+        }
+        if (unsigned.equalsIgnoreCase("inf") || unsigned.equalsIgnoreCase("infinity")) {
+            return text.startsWith("-") ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
+        }
+        try {
+            return Double.parseDouble(text);
+        } catch (NumberFormatException e) {
+            return null;                                            // ValueError
+        }
+    }
 
     public static boolean truthy(Object value) {
-        return false;
-    }                   // Pythons bool(value): null, false, 0, "", tomma listor och kartor är falska; allt annat sant, "false" och NaN med
+
+
+        if (value == null
+                || (value instanceof Boolean && !((Boolean) value))
+                || (value instanceof Number n && n.doubleValue() == 0.0)
+                || (value instanceof String s && s.equals(""))
+                || ((value instanceof List) && ((List<?>) value).isEmpty())
+                || ((value instanceof Map) && ((Map<?, ?>) value).isEmpty())) {
+            return false;
+        }
+        ;
+        return true;
+    }                // Pythons bool(value): null, false, 0, "", tomma listor och kartor är falska; allt annat sant, "false" och NaN med
+
+
 }

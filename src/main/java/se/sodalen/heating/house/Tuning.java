@@ -174,10 +174,10 @@ public class Tuning {
     public double tableFitSeconds = 3600.0;
 
     public double clampFlow(double flow) {
-        return 0.0;
-    }                   // min(flowMax, max(flowMin, flow)); inte Math.clamp, som kastar när flowMin > flowMax
+        return Math.min(flowMax, Math.max(flowMin, flow));
+    }
 
     public double designSpan() {
-        return 0.0;
-    }                   // dimensionerande (rumsmål - ute), aldrig under 1
+        return Math.max(1.0, roomTarget - designOutdoor);
+    }                  // dimensionerande (rumsmål - ute), aldrig under 1
 }

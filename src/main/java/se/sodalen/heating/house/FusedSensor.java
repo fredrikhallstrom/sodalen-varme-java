@@ -1,5 +1,6 @@
 package se.sodalen.heating.house;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 // Vad sammanvägningen gjorde av en inomhusgivare: råvärdet, det rättade, vikten, om den hölls
@@ -18,10 +19,22 @@ public record FusedSensor(String key, String role, Double raw, Double corrected,
     }
 
     public boolean contributed() {
-        return false;
+        return active && corrected != null && weight > 0.0;
     }                   // aktiv, med ett rättat värde och en vikt över noll
 
     public Map<String, Object> asDict() {
-        return null;
+        Map<String, Object> result = new LinkedHashMap<>();
+
+        result.put("key",key);
+        result.put("role", role);
+        result.put("raw", raw);
+        result.put("corrected", corrected);
+        result.put("weight", weight);
+        result.put("clamped", clamped);
+        result.put("offset", offset);
+        result.put("active", active);
+        result.put("featured", featured);
+
+        return result;
     }                   // Pythons nycklar i Pythons ordning: key, role, raw, corrected, weight, clamped, offset, active, featured
 }

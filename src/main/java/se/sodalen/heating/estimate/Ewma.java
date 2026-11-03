@@ -39,13 +39,7 @@ public final class Ewma {
     public static Ewma fromDict(Map<String, ?> data, double seconds) {
         data = asMapping(data);
         Ewma ewma = new Ewma(seconds);
-        if (data.get("value") instanceof String s) {
-            try {
-                ewma.value = asOptionalFloat(s);
-            } catch (NumberFormatException e) {
-                ewma.value = 0.0;
-            }
-        }
+                ewma.value = asOptionalFloat(data.get("value"));
 
         return ewma;
     }
