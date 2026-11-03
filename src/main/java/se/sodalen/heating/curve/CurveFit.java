@@ -1,6 +1,7 @@
 package se.sodalen.heating.curve;
 
 import java.util.List;
+import java.util.Map;
 
 // Kurvan genom tabellens prickar: lutning och böj givet balansen, och hur mycket av det som är
 // mätning. rejected är avvikarnas utetemperaturer, chain de betrodda prickar som räknades, varm ände först.
@@ -15,4 +16,5 @@ public record CurveFit(double slope, double balance, double curvature, Double co
     public boolean steerable() {
         return chain.size() >= Fitting.MIN_CHAIN;
     }                   // kedja nog för att kurvan ska få följa anpassningen: minst MIN_CHAIN
+
 }

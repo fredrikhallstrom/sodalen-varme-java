@@ -1,5 +1,7 @@
 package se.sodalen.heating.estimate;
 
+import java.util.Map;
+
 // Minsta kvadrat-linjen y = a + b*x genom prov som bleknar med tiden.
 public final class Regression {
     double horizon;
@@ -12,6 +14,16 @@ public final class Regression {
     public Regression(double horizon) {
         this.horizon = horizon;
     }                   // tidskonstanten för glömskan, sekunder
+
+    public static Regression fromDict(Map<String, ?> data, double horizon) {
+        Regression result = new Regression(horizon);
+        result.weight = (double) data.get("weight");
+        result.sumX = (double) data.get("sumX");
+        result.sumY = (double) data.get("sumY");
+        result.sumXx = (double) data.get("sumXx");
+        result.sumXy = (double) data.get("sumXy");
+        return result;
+    }
 
     public double horizon() {
         return horizon;
@@ -43,7 +55,7 @@ public final class Regression {
             double ratio = dt / horizon;
             decay = ratio < 30.0 ? Math.pow(Math.E, -ratio) : 0.0;
         }
-        weight =  weight * decay + 1.0;
+        weight = weight * decay + 1.0;
         sumX = sumX * decay + x;
         sumY = sumY * decay + y;
         sumXx = sumXx * decay + x * x;
@@ -90,7 +102,18 @@ public final class Regression {
         return new Fit(meanY() - slope * meanX(), slope, true);
     }
 
-    private void setHorizon(double horizon) {
+    public void setHorizon(double horizon) {
         this.horizon = horizon;
+    }
+
+    public Map<String, Object> asDict() {
+        return Map.of(
+                "horizon", horizon,
+                "weight", weight,
+                "sumX", sumX,
+                "sumY", sumY,
+                "sumXx", sumXx,
+                "sumXy", sumXy
+                );
     }
 }

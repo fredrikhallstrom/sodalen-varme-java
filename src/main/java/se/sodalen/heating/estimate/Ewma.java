@@ -1,6 +1,9 @@
 package se.sodalen.heating.estimate;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
+
+import static se.sodalen.heating.helper.Parsing.*;
 
 // Ett medelvärde som följer sina prov med en tidskonstant, efter den tid som faktiskt gick.
 public final class Ewma {
@@ -27,11 +30,24 @@ public final class Ewma {
     }                   // null tills första provet
 
     public Map<String, Double> asDict() {
-        return Map.of("seconds", seconds, "value", value);
+        Map<String, Double> result = new LinkedHashMap<>();
+        result.put("seconds", seconds);
+        result.put("value", value);
+        return result;
     }
 
     public static Ewma fromDict(Map<String, ?> data, double seconds) {
-        return new Ewma(seconds, (Double) data.get("value"));
+        data = asMapping(data);
+        Ewma ewma = new Ewma(seconds);
+        if (data.get("value") instanceof String s) {
+            try {
+                ewma.value = asOptionalFloat(s);
+            } catch (NumberFormatException e) {
+                ewma.value = 0.0;
+            }
+        }
+
+        return ewma;
     }
 
     public Double update(Double sample, double dt) {

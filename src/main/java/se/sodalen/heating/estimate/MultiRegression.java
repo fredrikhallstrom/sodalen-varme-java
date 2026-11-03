@@ -2,27 +2,30 @@ package se.sodalen.heating.estimate;
 
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import static se.sodalen.heating.helper.Parsing.*;
 
 // Minsta kvadrat i flera variabler, med glömska, förkunskap, golv och en ärlig uppfattning om hur säker den är.
 
 public final class MultiRegression {
+    public static final double RIDGE = 1e-6;     // läggs på diagonalen, gånger vikten
     private final int size;
-    private double horizon;
     private final double ridge;
+    private double[][] xX;
+    private double[] xY;
+    private double horizon;
     private double residual = 0.0;
     private double residualData = 0.0;
     private Double yY = 0.0;
-    private final double[][] xX;
-    private final double[] xY;
     private Map<Integer, Prior> priors = new HashMap<>();
     private Map<Integer, Double> floors = new HashMap<>();
     private double[] beta;
     private boolean betaReady = false;
-
-    public static final double RIDGE = 1e-6;     // läggs på diagonalen, gånger vikten
     private double weight = 0.0;
 
     public MultiRegression(int size, double horizon) {
@@ -41,8 +44,60 @@ public final class MultiRegression {
         this.ridge = ridge;
     }
 
-    public void setHorizon(double seconds) {
-        this.horizon = seconds;
+    public static MultiRegression fromDict(Map<String, ?> data, int size, double horizon) {
+        data = asMapping(data);
+
+        int storedSize;
+        try {
+            storedSize = data.get("size") == null || !(data.get("size") instanceof Number n) ? 0 : n.intValue();
+            if (data.get("size") instanceof String s) {
+                storedSize = Integer.parseInt(s.strip());
+            }
+        } catch (NumberFormatException e) {
+            storedSize = 0;
+        }
+
+        if (!(data.get("xx") instanceof List<?> rows) || rows.size() != size) {
+            return new MultiRegression(size, horizon);
+        }
+        double[][] xX = new double[size][size];
+
+        for (int r = 0; r < size; r++) {
+            if (!(rows.get(r) instanceof List<?> row) || row.size() != size) {
+                return new MultiRegression(size, horizon);
+            }
+            for (int c = 0; c < size; c++) {
+                if (!(row.get(c) instanceof Number n)) {
+                    return new MultiRegression(size, horizon);
+                }
+                xX[r][c] = n.doubleValue();
+            }
+        }
+
+        if (!(data.get("xy") instanceof List<?> xyList) || xyList.size() != size)
+            return new MultiRegression(size, horizon);
+
+
+        double[] xY = new double[size];
+        for (int i = 0; i < size; i++) {
+            if (!(xyList.get(i) instanceof Number n)) {
+                return new MultiRegression(size, horizon);   // null eller text i listan
+            }
+            xY[i] = n.doubleValue();
+        }
+
+        if (storedSize != size)
+            return new MultiRegression(size, horizon);
+
+
+        MultiRegression fit = new MultiRegression(size, horizon);
+        fit.weight = asFloat(data.get("weight"), 0.0);
+        fit.xX = xX;
+        fit.xY = xY;
+        fit.residual = asFloat(data.get("residual"), 0.0);
+        fit.residualData = asFloat(data.get("residual_data"), asFloat(data.get("residual"), 0.0));
+        fit.yY = asOptionalFloat(data.get("yy"));
+        return fit;
     }
 
     public static double[] solveSymmetric(double[][] matrix, double[] rhs) {
@@ -101,6 +156,10 @@ public final class MultiRegression {
 
         return result;
     }                   // Gauss-Jordan med pivot; null när systemet är singulärt
+
+    public void setHorizon(double seconds) {
+        this.horizon = seconds;
+    }
 
     public int size() {
         return size;
@@ -466,4 +525,17 @@ public final class MultiRegression {
         Double variance = variance(x);
         return variance == null ? null : Math.pow(variance, 0.5);
     }                   // samma som standardavvikelse
+
+    public Map<String, Object> asDict() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("size", (int) size);
+        result.put("horizon", horizon);
+        result.put("weight", weight);
+        result.put("xx", Arrays.stream(xX).map(row -> Arrays.stream(row).boxed().toList()).toList());
+        result.put("xy", Arrays.stream(xY).boxed().toList());
+        result.put("residual", residual);
+        result.put("residual_data", residualData);
+        result.put("yy", yY);
+        return result;
+    }
 }

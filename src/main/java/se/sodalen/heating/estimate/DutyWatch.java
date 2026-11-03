@@ -1,6 +1,10 @@
 package se.sodalen.heating.estimate;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.OptionalDouble;
+
+import static se.sodalen.heating.helper.Parsing.*;
 
 // Hur stor del av tiden något höll, över ett fönster som bleknar.
 public final class DutyWatch {
@@ -29,7 +33,11 @@ public final class DutyWatch {
     }                   // weight i timmar
 
     public Map<String, Double> asDict() {
-        return Map.of("seconds", seconds, "share", share, "weight", weight);
+        Map<String, Double> result = new LinkedHashMap<>();
+        result.put("seconds", seconds);
+        result.put("share", share);
+        result.put("weight", weight);
+        return result;
     }
 
     public void update(Boolean held, double dt) {
@@ -45,7 +53,14 @@ public final class DutyWatch {
         weight = total;
     }                   // null: gick inte att avgöra, men tiden går ändå
 
-    private void setSeconds(double seconds) {
+    public void setSeconds(double seconds) {
         this.seconds = seconds;
+    }
+    public static DutyWatch fromDict(Map<String, ?> data, double seconds) {
+        data = asMapping(data);
+        DutyWatch watch = new DutyWatch(seconds);
+        watch.share = asOptionalFloat(data.get("share"));
+        watch.weight = asFloat(data.get("weight"), 0.0);
+        return watch;
     }
 }
