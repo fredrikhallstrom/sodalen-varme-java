@@ -67,8 +67,16 @@ höjer du siffran, och då kommer nästa stegs tester med. Varje stegmapp har:
 | 9 | Kurvanpassningen | `curvefit.py` | tester klara |
 | 10 | Brännaren: olja, pellets och reläerna | `burner.py` | tester klara |
 | 11 | Modellen: inställningar, lärt tillstånd, in- och utdata | `model.py` | tester klara |
-| 12 | Regulatorn, i flera delsteg | `controller.py` | |
-| 13 | Skuggläge: tjänst på sodalenservern som jämför med HA live | | |
+| 12 | Regulatorns grund: givarfusionen, hjälparna, texterna, konstruktorn | `controller.py`, `texts.py` | tester klara |
+| 13 | Regulatorn: ute, inne, klockorna och kurvan | `controller.py` | |
+| 14 | Regulatorn: deltat och radiatorvakten | `controller.py` | |
+| 15 | Regulatorn: läget och värmekällan | `controller.py` | |
+| 16 | Regulatorn: utrullningen | `controller.py` | |
+| 17 | Regulatorn: inre loopen och ventilkommandot | `controller.py` | |
+| 18 | Regulatorn: inlärningen och dess grindar | `controller.py` | |
+| 19 | Regulatorn: tabellen och förstärkningen | `controller.py` | |
+| 20 | Regulatorn: hela cykeln, sluten slinga och persistens | `controller.py` | |
+| 21 | Skuggläge: tjänst på sodalenservern som jämför med HA live | | |
 
 Nästa stegs tester skrivs när du närmar dig det, så de följer Pythonversionen
 som den ser ut då.

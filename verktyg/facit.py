@@ -1893,6 +1893,115 @@ def model(core, rng) -> None:
     write(step, "effective_curvature.csv", ["bend", "curve_curvature", "effective"], rows)
 
 
+def _sensor(reading) -> str:
+    """En SensorReading som key,temperature,role,weight,offset,stratification,active,featured;
+    tom temperatur är None, bool som true/false. Nycklarna innehåller inga , | eller ;."""
+    temperature = "" if reading.temperature is None else repr(reading.temperature)
+    return ",".join([reading.key, temperature, reading.role, repr(reading.weight), repr(reading.offset),
+                     repr(reading.stratification), _bool(reading.active), _bool(reading.featured)])
+
+
+def _args(*values) -> str:
+    """Argument med , emellan, tomt för None, flyttal med repr."""
+    return ",".join("" if v is None else repr(float(v)) for v in values)
+
+
+def controller(core, rng) -> None:
+    """Steg 12, regulatorns grund: fuse_indoor, sunlight_now, de små hjälparna och nödtexten."""
+    m, c, t = core.model, core.controller, core.texts
+    step = "12-grunden"
+    keys = ["sensor.tak_hall", "sensor.tak_kok", "sensor.solrum", "sensor.sovrum", "sensor.kontor"]
+
+    def reading(i, temperature, role, weight, offset=0.0, stratification=0.0, active=True, featured=False):
+        return m.SensorReading(key=keys[i], temperature=temperature, role=role, weight=weight, offset=offset,
+                               stratification=stratification, active=active, featured=featured)
+
+    # Kanterna först: solrummet precis på taket (inte hållet), bara solrum (inget att hålla mot),
+    # två solrum mot resten, ett tillopp under målet (ingen skiktning), inget tillopp alls.
+    made = [
+        (21.0, 1.5, 45.0, [reading(0, 21.0, m.ROLE_CEILING, 1.0), reading(2, 22.5, m.ROLE_SOLAR, 0.15)]),
+        (21.0, 1.5, 45.0, [reading(0, 21.0, m.ROLE_CEILING, 1.0), reading(2, 22.6, m.ROLE_SOLAR, 0.15)]),
+        (21.0, 1.5, 45.0, [reading(2, 30.0, m.ROLE_SOLAR, 0.15), reading(3, 24.0, m.ROLE_SOLAR, 0.15)]),
+        (21.0, 1.0, 45.0, [reading(0, 21.0, m.ROLE_ROOM, 1.0), reading(2, 30.0, m.ROLE_SOLAR, 0.15),
+                           reading(3, 21.8, m.ROLE_SOLAR, 0.3)]),
+        (21.0, 1.5, 18.0, [reading(0, 22.5, m.ROLE_CEILING, 1.0, stratification=0.06)]),
+        (21.0, 1.5, None, [reading(0, 22.5, m.ROLE_CEILING, 1.0, stratification=0.06)]),
+        (21.0, 1.5, 45.0, [reading(0, 21.0, m.ROLE_ROOM, 1.0, active=False),
+                           reading(2, 30.0, m.ROLE_SOLAR, 0.15)]),
+        (21.0, 1.5, 45.0, []),
+    ]
+    for _ in range(1500):
+        count = rng.choice([0, 1, 1, 2, 3, 3, 4, 5])
+        made.append((
+            rng.choice([21.0, round(rng.uniform(18.0, 24.0), 1)]),
+            rng.choice([1.5, round(rng.uniform(0.0, 3.0), 2)]),
+            None if rng.random() < 0.15 else round(rng.uniform(15.0, 70.0), rng.choice([1, 3])),
+            [reading(i,
+                     None if rng.random() < 0.1 else round(rng.uniform(14.0, 32.0), rng.choice([1, 2, 6])),
+                     rng.choice(m.ROLES),
+                     rng.choice([1.0, 0.5, 0.15, 0.0, -0.3, round(rng.uniform(0.05, 1.5), 3)]),
+                     offset=rng.choice([0.0, 0.0, round(rng.uniform(-1.5, 1.5), 2)]),
+                     stratification=rng.choice([0.0, 0.0, round(rng.uniform(0.01, 0.1), 3), -0.02]),
+                     active=rng.random() < 0.85,
+                     featured=rng.random() < 0.2)
+             for i in range(count)],
+        ))
+    rows = []
+    for target, clamp, flow, readings in made:
+        fused, details = c.fuse_indoor(readings, m.Tuning(room_target=target, solar_clamp=clamp), flow)
+        rows.append([target, clamp, flow, "|".join(_sensor(r) for r in readings), fused,
+                     "/".join(_stored(d.as_dict()) for d in details)])
+    write(step, "fuse_indoor.csv", ["room_target", "solar_clamp", "flow", "readings", "fused", "details"], rows)
+
+    rows = []
+    for error, band in ((0.5, 0.5), (-0.5, 0.5), (0.0, 0.0), (1.0, 0.0), (-1.0, -0.5), (0.7, 0.5)):
+        rows.append(["deadbanded", _args(error, band), c._deadbanded(error, band)])
+    for _ in range(400):
+        error, band = rng.uniform(-5.0, 5.0), rng.choice([0.0, -0.5, 0.5, rng.uniform(0.0, 2.0)])
+        rows.append(["deadbanded", _args(error, band), c._deadbanded(error, band)])
+    for value, low, high in ((5.0, 0.0, 1.0), (-5.0, 0.0, 1.0), (0.5, 0.0, 1.0), (0.5, 1.0, 0.0), (5.0, 3.0, 2.0)):
+        rows.append(["clamp", _args(value, low, high), c._clamp(value, low, high)])
+    for _ in range(300):
+        value, low, high = rng.uniform(-10.0, 10.0), rng.uniform(-5.0, 5.0), rng.uniform(-5.0, 5.0)
+        rows.append(["clamp", _args(value, low, high), c._clamp(value, low, high)])
+    for _ in range(300):
+        value, goal = rng.uniform(-10.0, 10.0), rng.uniform(-10.0, 10.0)
+        step_size = rng.choice([0.0, -1.0, 0.5, rng.uniform(0.0, 5.0), 100.0])
+        rows.append(["toward", _args(value, goal, step_size), c._toward(value, goal, step_size)])
+    for last, wanted, dt, seconds in ((8.0, 2.0, 30.0, 900.0), (2.0, 8.0, 900.0, 900.0), (None, 8.0, 30.0, 900.0),
+                                      (2.0, 8.0, 30.0, 0.0), (2.0, 8.0, -30.0, 900.0), (2.0, 8.0, 30.0, -900.0),
+                                      (2.0, 2.0, 30.0, 900.0)):
+        rows.append(["rising_slowly", _args(last, wanted, dt, seconds), c._rising_slowly(last, wanted, dt, seconds)])
+    for _ in range(400):
+        last = None if rng.random() < 0.15 else rng.uniform(0.0, 10.0)
+        wanted = rng.uniform(0.0, 10.0)
+        dt = rng.choice([30.0, -30.0, 0.0, rng.uniform(0.0, 3600.0)])
+        seconds = rng.choice([900.0, 0.0, -900.0, rng.uniform(1.0, 3600.0)])
+        rows.append(["rising_slowly", _args(last, wanted, dt, seconds), c._rising_slowly(last, wanted, dt, seconds)])
+    write(step, "helpers.csv", ["function", "args", "expected"], rows)
+
+    rows = []
+    for _ in range(400):
+        light = rng.choice([None, math.nan, math.inf, -math.inf, -0.2, 0.0, rng.uniform(0.0, 0.9), rng.uniform(0.0, 0.9)])
+        elevation = rng.choice([None, rng.uniform(-10.0, 60.0), rng.uniform(-10.0, 60.0)])
+        cloud = rng.choice([None, 0.0, 1.0, rng.uniform(0.0, 1.0)])
+        cycle = m.ControlInputs(dt=30.0, sunlight=light, sun_elevation=elevation, cloud=cloud)
+        rows.append([light, elevation, cloud, c.sunlight_now(cycle)])
+    write(step, "sunlight_now.csv", ["sunlight", "sun_elevation", "cloud", "expected"], rows)
+
+    rows = []
+    kinds = list(m.EMERGENCY_KINDS) + ["x"]
+    for position, flow in ((0.5, 44.5), (1.5, 45.5), (2.5, 20.5), (50.5, 35.5), (64.4, 64.6), (99.5, 69.5)):
+        for kind in kinds:
+            rows.append([kind, position, flow, t.emergency_reason(kind, position, flow)])
+    for _ in range(300):
+        kind = rng.choice(kinds)
+        position = rng.choice([float(rng.randint(0, 100)), rng.randint(0, 100) + 0.5, rng.uniform(0.0, 100.0)])
+        flow = rng.choice([float(rng.randint(20, 70)), rng.randint(20, 70) + 0.5, rng.uniform(20.0, 70.0)])
+        rows.append([kind, position, flow, t.emergency_reason(kind, position, flow)])
+    write(step, "emergency_reason.csv", ["kind", "position", "flow", "expected"], rows)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -1910,12 +2019,14 @@ def main() -> int:
     forecast(core, rng)
     curvefit(core, rng)
     burner(core, rng)
-    model(core, rng)  # sist: stegen före får samma slumptal som förut
+    model(core, rng)
+    controller(core, rng)  # sist: stegen före får samma slumptal som förut
     for step, *modules in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
                            ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
                            ("06-skattarna", "estimators"), ("07-husmodellen", "thermal"),
                            ("08-prognosen", "forecast"), ("09-kurvanpassningen", "curvefit"),
-                           ("10-brannaren", "burner"), ("11-modellen", "model", "parsing", "sunterm")):
+                           ("10-brannaren", "burner"), ("11-modellen", "model", "parsing", "sunterm"),
+                           ("12-grunden", "controller", "texts")):
         for module in modules:
             copy_source(heating, step, module)
     return 0
