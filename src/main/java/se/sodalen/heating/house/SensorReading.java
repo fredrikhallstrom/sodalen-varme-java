@@ -26,6 +26,7 @@ public record SensorReading(String key, Double temperature, String role, double 
     }
 
     public boolean available() {
-        return false;
-    }                   // temperaturen finns (inte null)
+        // temperaturen finns (inte null)
+        return temperature != null;
+    }
 }

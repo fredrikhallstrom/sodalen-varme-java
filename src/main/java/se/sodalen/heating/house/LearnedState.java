@@ -127,44 +127,26 @@ public class LearnedState {
         state.coldAfter = data.get("cold_after") instanceof String s && Model.COLD_CAUSES.contains(s)
                 ? s : Model.truthy(data.get("shortfall_cold")) ? "shortfall"
                 : null;
-        state.secondsCold = asFloat(data.get("seconds_cold") == null ? data.get("seconds_shortfall_cold") : data.get("seconds_cold"), 0.0);
+        state.secondsCold = asFloat(data.containsKey("seconds_cold") ? data.get("seconds_cold") : data.get("seconds_shortfall_cold"), 0.0);
         state.secondsSinceTargetChange = asFloat(data.get("seconds_since_target_change"), 0.0);
         state.warmStopped = Model.truthy(data.get("warm_stopped"));
         state.summerStopped = Model.truthy(data.get("summer_stopped"));
         state.coasting = Model.truthy(data.get("coasting"));
         state.recovering = Model.truthy(data.get("recovering"));
         state.boilerOverheated = Model.truthy(data.get("boiler_overheated"));
-        state.needsReseed = Model.truthy(data.get("needs_reseed"));
+        state.needsReseed = !data.containsKey("needs_reseed") || Model.truthy(data.get("needs_reseed"));
         state.resumePosition = asOptionalFloat(data.get("resume_position"));
         state.resumeHoldLeft = asFloat(data.get("resume_hold_left"), 0.0);
         state.lastFeedforward = asOptionalFloat(data.get("last_feedforward"));
         state.lastKp = asOptionalFloat(data.get("last_kp"));
 
         if (!data.containsKey("balance_shift") && data.containsKey("curve_offset")) {
-            state.balanceShift = balanceFromOffset(asFloat(data.get("curve_offset"), 0.0), state, tuning);
+            state.balanceShift = Model.balanceFromOffset(asFloat(data.get("curve_offset"), 0.0), state, tuning);
             state.retune(tuning);
 
         }
         return state;
     }// Pythons from_dict rad för rad, med migreringarna shortfall_cold, seconds_shortfall_cold och curve_offset; sist retune
-
-
-    private static double balanceFromOffset(double offset, LearnedState state, Tuning tuning) {
-        double room = tuning.roomTarget;
-        double outdoor = Model.OFFSET_ERA_OUTDOOR;
-        if (state.curveFit.weight() > 0.0) {
-            outdoor = room - state.curveFit.meanX() * tuning.designSpan();
-        }
-
-        double slope = Math.min(tuning.slopeMax, Math.max(tuning.slopeMin, tuning.curveSlope + state.slopeTrim));
-        double demand = Math.max(0.0, room - outdoor) / tuning.designSpan();
-
-        double old = Math.pow(room + slope * tuning.designSpan() * demand, Model.OFFSET_ERA_CURVATURE + offset);
-
-        double balance = Curve.balanceThrough(outdoor, old, room, tuning.designOutdoor, slope, tuning.curveCurvature);
-
-        return Math.min(tuning.balanceShiftMax, Math.max(tuning.balanceShiftMin, balance - room));
-    };
 
     public void forget(Tuning tuning) {
         balanceShift = 0.0;
@@ -201,7 +183,7 @@ public class LearnedState {
         result.put("slope_trim", slopeTrim);
         result.put("bend", bend);
         result.put("process_gain", processGain);
-        result.put("delta_scale", deltaScale);
+        result.put("delta_scale", deltaScale.asDict());
         result.put("delta_filter", deltaFilter.asDict());
         result.put("delta_trim_held", deltaTrimHeld);
         result.put("seconds_settled", secondsSettled);

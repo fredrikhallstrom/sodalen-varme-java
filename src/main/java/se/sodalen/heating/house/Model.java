@@ -127,7 +127,7 @@ public final class Model {
         double slope = Math.min(tuning.slopeMax, Math.max(tuning.slopeMin, tuning.curveSlope + state.slopeTrim));
         double demand = Math.max(0.0, room - outdoor) / tuning.designSpan();
 
-        double old = Math.pow(room + slope * tuning.designSpan() * demand, OFFSET_ERA_CURVATURE + offset);
+        double old = room + slope * tuning.designSpan() * Math.pow(demand, OFFSET_ERA_CURVATURE) + offset;
         double balance = Curve.balanceThrough(outdoor, old, room, tuning.designOutdoor, slope, tuning.curveCurvature);
 
         return Math.min(tuning.balanceShiftMax, Math.max(tuning.balanceShiftMin, balance - room));
