@@ -236,12 +236,12 @@ public final class Model {
         if (value == null
                 || (value instanceof Boolean && !((Boolean) value))
                 || (value instanceof Number n && n.doubleValue() == 0.0)
-                || (value instanceof String s && s.equals(""))
+                || (value instanceof String s && s.isEmpty())
                 || ((value instanceof List) && ((List<?>) value).isEmpty())
                 || ((value instanceof Map) && ((Map<?, ?>) value).isEmpty())) {
             return false;
         }
-        ;
+
         return true;
     }                // Pythons bool(value): null, false, 0, "", tomma listor och kartor är falska; allt annat sant, "false" och NaN med
 

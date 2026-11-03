@@ -528,7 +528,7 @@ public final class MultiRegression {
 
     public Map<String, Object> asDict() {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("size", (int) size);
+        result.put("size", size);
         result.put("horizon", horizon);
         result.put("weight", weight);
         result.put("xx", Arrays.stream(xX).map(row -> Arrays.stream(row).boxed().toList()).toList());

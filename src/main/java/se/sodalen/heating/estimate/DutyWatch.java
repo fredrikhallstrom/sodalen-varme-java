@@ -2,7 +2,6 @@ package se.sodalen.heating.estimate;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.OptionalDouble;
 
 import static se.sodalen.heating.helper.Parsing.*;
 
@@ -15,6 +14,14 @@ public final class DutyWatch {
     public DutyWatch(double seconds) {
         this.seconds = seconds;
     }                   // fönstret
+
+    public static DutyWatch fromDict(Map<String, ?> data, double seconds) {
+        data = asMapping(data);
+        DutyWatch watch = new DutyWatch(seconds);
+        watch.share = asOptionalFloat(data.get("share"));
+        watch.weight = asFloat(data.get("weight"), 0.0);
+        return watch;
+    }
 
     public double seconds() {
         return seconds;
@@ -49,18 +56,11 @@ public final class DutyWatch {
             return;
         double total = weight + dt;
         double sample = held ? 1.0 : 0.0;
-        share = share == null ? sample : share + (sample -share) * dt / total;
+        share = share == null ? sample : share + (sample - share) * dt / total;
         weight = total;
     }                   // null: gick inte att avgöra, men tiden går ändå
 
     public void setSeconds(double seconds) {
         this.seconds = seconds;
-    }
-    public static DutyWatch fromDict(Map<String, ?> data, double seconds) {
-        data = asMapping(data);
-        DutyWatch watch = new DutyWatch(seconds);
-        watch.share = asOptionalFloat(data.get("share"));
-        watch.weight = asFloat(data.get("weight"), 0.0);
-        return watch;
     }
 }

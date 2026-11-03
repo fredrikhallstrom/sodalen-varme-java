@@ -2,7 +2,6 @@ package se.sodalen.heating.house;
 
 import se.sodalen.heating.estimate.MultiRegression;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,7 +42,7 @@ public final class SunTerm {
 
         SunTerm term = new SunTerm();
 
-        term.fit =  MultiRegression.fromDict(asMapping(data.get("fit")), SIZE, horizon);
+        term.fit = MultiRegression.fromDict(asMapping(data.get("fit")), SIZE, horizon);
         if (data.get("hour") instanceof List<?> cells && cells.size() == 4 && cells.stream().allMatch(o -> finite(o) != null)) {
             term.hour = cells.stream().mapToDouble(o -> asFloat(o, 0.0)).toArray();
         }
@@ -58,7 +57,7 @@ public final class SunTerm {
 
     private static Double finite(Object value) {
         double result;
-            result = asFloat(value, Double.NaN);
+        result = asFloat(value, Double.NaN);
 
         return Double.isFinite(result) ? result : null;
     }

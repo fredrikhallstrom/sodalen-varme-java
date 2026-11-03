@@ -1,6 +1,5 @@
 package se.sodalen.heating.house;
 
-import se.sodalen.heating.curve.Curve;
 import se.sodalen.heating.estimate.DutyWatch;
 import se.sodalen.heating.estimate.Ewma;
 import se.sodalen.heating.estimate.Regression;
