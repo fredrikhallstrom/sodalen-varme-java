@@ -198,6 +198,7 @@ LEARNER_NAMES = {
 LEARNING_WHY = {
     "off": "Självinlärningen är avstängd",
     "no_indoor": "Ingen innetemperatur",
+    "indoor_partial": "Någon innegivare saknas - huset mäts inte helt",
     "no_outdoor": "Utetemperaturen saknas",
     "override": "Override-kontakten är sluten",
     "after_override": "Väntar efter override eller nödkörning ({left} kvar)",
@@ -213,6 +214,7 @@ LEARNING_WHY = {
     "after_coast": "Väntar efter sparläget ({left} kvar)",
     "after_failsafe": "Väntar efter vakthunden ({left} kvar)",
     "failsafe_warm": "Väntar efter vakthunden, tills huset är nere på målet (högst {left} kvar)",
+    "over_target": "Väntar tills huset är nere på målet - något annat än kurvan värmde det (högst {left} kvar)",
     "sun": "Solen värmer huset",
     # Not a wait: the curve learning in the sun with the sun's part taken off
     # (sunterm.py) - said beside "Lär sig".

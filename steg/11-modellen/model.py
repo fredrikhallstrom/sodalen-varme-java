@@ -312,6 +312,22 @@ class Tuning:
     # heat lasted most of one; only over, because the watchdog errs warm.
     learn_after_failsafe_warm: float = 0.3
     learn_after_failsafe_max_seconds: float = 24.0 * 3600.0
+    # And whatever else warmed the house - the stove, the oven, a full
+    # kitchen, the morning sun the term already answers for: nothing
+    # behind the gate learns while the slow indoor temperature stands more
+    # than learn_over_target over target, up to learn_over_target_max_seconds
+    # from when it went over (LearnedState.seconds_over_target). The
+    # evenings of 1 and 3 November 2026 the kitchen stood at 23-23.7 while
+    # it cooked, the valve at 6-19 %, the waits above had run out, and the
+    # level's twelve-hour memory took 0.9 and 0.6 off the balance - the
+    # cold nights after stood low. Only over, as above. With a ceiling,
+    # because a curve genuinely too high holds the house over target for
+    # ever and has to be heard in the end: without one it stuck too high
+    # after a pump change (tests/test_learners_together.py); eighteen
+    # hours because the kitchen's evening and the sun's day in one made the
+    # curve 1.4 K low at twelve, 1.0 at eighteen.
+    learn_over_target: float = 0.3
+    learn_over_target_max_seconds: float = 18.0 * 3600.0
 
     # --- Supply/return delta compensation -------------------------------
     # Expected delta at the design point. Thermostatic radiator valves
@@ -939,6 +955,10 @@ class LearnedState:
     # Since the Shelly's watchdog last handed the valve back, as its
     # heartbeat answer says (ControlInputs.since_failsafe).
     seconds_since_failsafe: float = 1e6
+    # How long the slow indoor temperature has stood more than
+    # Tuning.learn_over_target over target, whatever warmed it; nought once
+    # it is back down.
+    seconds_over_target: float = 0.0
     # Which of COLD_CAUSES the house is still under target after, and for
     # how long; None once it is back.
     cold_after: str | None = None
@@ -1059,6 +1079,7 @@ class LearnedState:
             "seconds_since_shortfall": self.seconds_since_shortfall,
             "seconds_since_off": self.seconds_since_off,
             "seconds_since_failsafe": self.seconds_since_failsafe,
+            "seconds_over_target": self.seconds_over_target,
             "cold_after": self.cold_after,
             "seconds_cold": self.seconds_cold,
             "seconds_since_target_change": self.seconds_since_target_change,
@@ -1126,6 +1147,7 @@ class LearnedState:
             seconds_since_shortfall=as_float(data.get("seconds_since_shortfall"), 1e6),
             seconds_since_off=as_float(data.get("seconds_since_off"), 1e6),
             seconds_since_failsafe=as_float(data.get("seconds_since_failsafe"), 1e6),
+            seconds_over_target=as_float(data.get("seconds_over_target"), 0.0),
             # shortfall_cold was its name for a morning (ba43a64).
             cold_after=(data.get("cold_after") if data.get("cold_after") in COLD_CAUSES
                         else "shortfall" if data.get("shortfall_cold") else None),

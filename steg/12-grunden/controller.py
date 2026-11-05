@@ -511,6 +511,15 @@ class HeatingController:
         else:
             state.seconds_since_sun += dt
 
+        # How long the house has stood over target, whatever warmed it -
+        # see Tuning.learn_over_target. The slow indoor temperature, which
+        # _indoor() has just updated: the house, not a cooking hour.
+        slow = state.indoor_slow.value
+        if slow is not None and slow > self.tuning.room_target + self.tuning.learn_over_target:
+            state.seconds_over_target += dt
+        else:
+            state.seconds_over_target = 0.0
+
         if inputs.sweeping:
             state.seconds_since_sweep = 0.0
         else:
@@ -1691,6 +1700,17 @@ class HeatingController:
 
         if dt <= 0.0 or indoor_slow is None:
             return "no_indoor", None
+        # One sensor of three is not the house: the night of 1-2 November
+        # 2026 the two Verisure sensors were away 01:20-02:56, the kitchen
+        # alone read 22 against the house's 21.3, and the curve learnt 1.6
+        # hours of it. A sensor that is meant to count and has no reading
+        # - not one switched off in the configuration, which is the house
+        # as configured.
+        out = getattr(self, "_out", None)
+        if out is not None and any(
+                item.active and item.weight > 0.0 and item.corrected is None
+                for item in out.indoor_readings):
+            return "indoor_partial", None
         # The curve's outdoor temperature is a held value or a forecast
         # then, and an indoor error would be blamed on the wrong curve.
         if inputs.outdoor is None:
@@ -1746,6 +1766,18 @@ class HeatingController:
         elif (indoor_slow > tuning.room_target + tuning.learn_after_sun_warm
                 and state.seconds_since_sun < tuning.learn_after_sun_max_seconds):
             return "sun_warm", tuning.learn_after_sun_max_seconds - state.seconds_since_sun
+        # And whatever else warmed it - the kitchen's evening, the morning
+        # sun the term already answers for, the sun past its six hours: a
+        # house over target is not the curve's until it is back down, up to
+        # learn_over_target_max_seconds from when it went over. After the
+        # sun's and the watchdog's own waits, so that each says its cause
+        # while it lasts. Only over, as above; with a ceiling, because a
+        # curve genuinely too high keeps it over for ever and has to be
+        # heard in the end (Tuning.learn_over_target).
+        if (indoor_slow > tuning.room_target + tuning.learn_over_target
+                and state.seconds_over_target < tuning.learn_over_target_max_seconds):
+            return ("over_target",
+                    tuning.learn_over_target_max_seconds - state.seconds_over_target)
         if state.seconds_since_target_change < tuning.learn_settle_seconds:
             return "target_changed", tuning.learn_settle_seconds - state.seconds_since_target_change
         if demand < tuning.learn_min_demand:
