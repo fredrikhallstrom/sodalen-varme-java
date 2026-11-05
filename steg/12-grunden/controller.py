@@ -280,7 +280,8 @@ class HeatingController:
         demand_temp = max(0.0, tuning.room_target - outdoor)
         demand = demand_temp / tuning.design_span
 
-        curve_flow, effective_slope = self._curve(outdoor)
+        curve_outdoor = self._curve_outdoor(inputs.outdoor, outdoor)
+        curve_flow, effective_slope = self._curve(curve_outdoor)
 
         room_trim = 0.0
         if indoor is not None:
@@ -411,6 +412,7 @@ class HeatingController:
         out.indoor_fused = indoor
         out.indoor_slow = indoor_slow
         out.outdoor_filtered = outdoor
+        out.curve_outdoor = curve_outdoor
         out.outdoor_summer = outdoor_summer
         out.delta = delta
         out.delta_expected = delta_expected
@@ -535,6 +537,16 @@ class HeatingController:
             out.degraded.append("return")
 
     # --- setpoint -------------------------------------------------------
+
+    def _curve_outdoor(self, measured: float | None, filtered: float) -> float:
+        """The outdoor temperature the curve reads: the filtered one, and
+        in a cold front part of the way down to what is measured."""
+        if measured is None or measured >= filtered:
+            return filtered
+        tuning = self.tuning
+        return filtered - tuning.outdoor_fall_lead * min(
+            filtered - measured, tuning.outdoor_fall_limit
+        )
 
     def _curve(self, outdoor: float) -> tuple[float, float]:
         effective_slope = self.effective_slope()

@@ -216,6 +216,16 @@ class Tuning:
     # reads a filtered outdoor temperature. Three hours is a light building;
     # raise it for heavy masonry.
     outdoor_filter_seconds: float = 3.0 * 3600.0
+    # When it is colder than that mean, the curve alone reads this share of
+    # the way down to the measured temperature: a three-hour mean is behind
+    # by three hours of the fall, and the room correction only answers from
+    # a house already under target. On the night of 2026-11-05 it fell 6 K
+    # in seven hours and the house sank 0.9 K under its target. Warmer than
+    # the mean it stays the mean, so a sunny morning takes nothing away, and
+    # what the learners read is the mean in both directions.
+    outdoor_fall_lead: float = 0.5
+    # The most of the gap it counts, for a sensor gone wrong.
+    outdoor_fall_limit: float = 4.0
 
     # --- Indoor feedback ------------------------------------------------
     indoor_filter_seconds: float = 20.0 * 60.0
@@ -1253,6 +1263,9 @@ class ControlOutput:
     # a curve should not be adjusted because someone opened a window.
     indoor_slow: float | None = None
     outdoor_filtered: float | None = None
+    # The outdoor temperature the curve read, which is colder than the
+    # filtered one in a cold front (Tuning.outdoor_fall_lead).
+    curve_outdoor: float | None = None
     # The slower average the summer stop is decided on.
     outdoor_summer: float | None = None
     delta: float | None = None
