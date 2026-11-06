@@ -1,319 +1,319 @@
 kind;position;flow;expected
-valve;0.5;44.5;Nödkörning - fast ventilläge 0 %
 flow;0.5;44.5;Nödkörning - fast tillopp 44 °C
+valve;0.5;44.5;Nödkörning - fast ventilläge 0 %
 x;0.5;44.5;Nödkörning
-valve;1.5;45.5;Nödkörning - fast ventilläge 2 %
 flow;1.5;45.5;Nödkörning - fast tillopp 46 °C
+valve;1.5;45.5;Nödkörning - fast ventilläge 2 %
 x;1.5;45.5;Nödkörning
-valve;2.5;20.5;Nödkörning - fast ventilläge 2 %
 flow;2.5;20.5;Nödkörning - fast tillopp 20 °C
+valve;2.5;20.5;Nödkörning - fast ventilläge 2 %
 x;2.5;20.5;Nödkörning
-valve;50.5;35.5;Nödkörning - fast ventilläge 50 %
 flow;50.5;35.5;Nödkörning - fast tillopp 36 °C
+valve;50.5;35.5;Nödkörning - fast ventilläge 50 %
 x;50.5;35.5;Nödkörning
-valve;64.4;64.6;Nödkörning - fast ventilläge 64 %
 flow;64.4;64.6;Nödkörning - fast tillopp 65 °C
+valve;64.4;64.6;Nödkörning - fast ventilläge 64 %
 x;64.4;64.6;Nödkörning
-valve;99.5;69.5;Nödkörning - fast ventilläge 100 %
 flow;99.5;69.5;Nödkörning - fast tillopp 70 °C
+valve;99.5;69.5;Nödkörning - fast ventilläge 100 %
 x;99.5;69.5;Nödkörning
 x;33.5;63.5;Nödkörning
-flow;83.0;65.90509052940936;Nödkörning - fast tillopp 66 °C
-valve;53.259987622113236;55.5;Nödkörning - fast ventilläge 53 %
-flow;20.214795531826734;66.09774590477633;Nödkörning - fast tillopp 66 °C
-flow;17.0;46.12216861784172;Nödkörning - fast tillopp 46 °C
-valve;21.0;62.0;Nödkörning - fast ventilläge 21 %
-flow;57.5;43.0;Nödkörning - fast tillopp 43 °C
-flow;2.3119371918789877;53.5;Nödkörning - fast tillopp 54 °C
-flow;64.38035880830849;24.814054858223386;Nödkörning - fast tillopp 25 °C
-flow;3.0164187331858883;65.80124735921649;Nödkörning - fast tillopp 66 °C
+valve;83.0;65.90509052940936;Nödkörning - fast ventilläge 83 %
+flow;53.259987622113236;55.5;Nödkörning - fast tillopp 56 °C
+valve;20.214795531826734;66.09774590477633;Nödkörning - fast ventilläge 20 %
+valve;17.0;46.12216861784172;Nödkörning - fast ventilläge 17 %
+flow;21.0;62.0;Nödkörning - fast tillopp 62 °C
+valve;57.5;43.0;Nödkörning - fast ventilläge 58 %
+valve;2.3119371918789877;53.5;Nödkörning - fast ventilläge 2 %
+valve;64.38035880830849;24.814054858223386;Nödkörning - fast ventilläge 64 %
+valve;3.0164187331858883;65.80124735921649;Nödkörning - fast ventilläge 3 %
 x;34.0;65.37377153942352;Nödkörning
 x;93.70306507750887;36.79421270373113;Nödkörning
-valve;93.0;20.0;Nödkörning - fast ventilläge 93 %
-valve;98.0;66.21016029608845;Nödkörning - fast ventilläge 98 %
+flow;93.0;20.0;Nödkörning - fast tillopp 20 °C
+flow;98.0;66.21016029608845;Nödkörning - fast tillopp 66 °C
 x;28.5;53.5;Nödkörning
-valve;35.5;22.0;Nödkörning - fast ventilläge 36 %
+flow;35.5;22.0;Nödkörning - fast tillopp 22 °C
 x;12.0;23.3410385138687;Nödkörning
-valve;35.0839018556281;40.0;Nödkörning - fast ventilläge 35 %
-flow;80.96298354872748;27.0;Nödkörning - fast tillopp 27 °C
+flow;35.0839018556281;40.0;Nödkörning - fast tillopp 40 °C
+valve;80.96298354872748;27.0;Nödkörning - fast ventilläge 81 %
 x;9.5;59.03536208352217;Nödkörning
 x;11.0;51.5;Nödkörning
 x;87.5;61.5;Nödkörning
 x;89.5;45.5;Nödkörning
 x;97.0;21.939504996936492;Nödkörning
-valve;67.63801553937704;33.5;Nödkörning - fast ventilläge 68 %
-valve;1.0;65.5;Nödkörning - fast ventilläge 1 %
-valve;52.5;65.44766272476966;Nödkörning - fast ventilläge 52 %
-flow;76.9084803845155;39.0;Nödkörning - fast tillopp 39 °C
-valve;29.0;36.81153807614204;Nödkörning - fast ventilläge 29 %
+flow;67.63801553937704;33.5;Nödkörning - fast tillopp 34 °C
+flow;1.0;65.5;Nödkörning - fast tillopp 66 °C
+flow;52.5;65.44766272476966;Nödkörning - fast tillopp 65 °C
+valve;76.9084803845155;39.0;Nödkörning - fast ventilläge 77 %
+flow;29.0;36.81153807614204;Nödkörning - fast tillopp 37 °C
 x;73.0;39.02368664036431;Nödkörning
-valve;86.30873748090659;58.5;Nödkörning - fast ventilläge 86 %
-valve;8.111638437797852;29.125498411896228;Nödkörning - fast ventilläge 8 %
-flow;64.10156534498638;31.5;Nödkörning - fast tillopp 32 °C
-flow;96.5;62.5;Nödkörning - fast tillopp 62 °C
-flow;82.75700136069246;39.5;Nödkörning - fast tillopp 40 °C
+flow;86.30873748090659;58.5;Nödkörning - fast tillopp 58 °C
+flow;8.111638437797852;29.125498411896228;Nödkörning - fast tillopp 29 °C
+valve;64.10156534498638;31.5;Nödkörning - fast ventilläge 64 %
+valve;96.5;62.5;Nödkörning - fast ventilläge 96 %
+valve;82.75700136069246;39.5;Nödkörning - fast ventilläge 83 %
 x;11.0;35.0;Nödkörning
-valve;52.19216881512213;39.0;Nödkörning - fast ventilläge 52 %
+flow;52.19216881512213;39.0;Nödkörning - fast tillopp 39 °C
 x;5.0;23.5;Nödkörning
-valve;23.5;30.5;Nödkörning - fast ventilläge 24 %
-valve;12.5;54.0;Nödkörning - fast ventilläge 12 %
-valve;74.5;67.5;Nödkörning - fast ventilläge 74 %
+flow;23.5;30.5;Nödkörning - fast tillopp 30 °C
+flow;12.5;54.0;Nödkörning - fast tillopp 54 °C
+flow;74.5;67.5;Nödkörning - fast tillopp 68 °C
 x;67.06824799856994;40.35807205130942;Nödkörning
 x;35.0;69.5;Nödkörning
 x;9.5;55.26688099249179;Nödkörning
-flow;36.665416938434234;29.0;Nödkörning - fast tillopp 29 °C
-valve;31.5;32.5;Nödkörning - fast ventilläge 32 %
+valve;36.665416938434234;29.0;Nödkörning - fast ventilläge 37 %
+flow;31.5;32.5;Nödkörning - fast tillopp 32 °C
 x;9.33512519755979;21.5;Nödkörning
-flow;49.10312362838353;33.5;Nödkörning - fast tillopp 34 °C
-flow;50.0;61.5;Nödkörning - fast tillopp 62 °C
+valve;49.10312362838353;33.5;Nödkörning - fast ventilläge 49 %
+valve;50.0;61.5;Nödkörning - fast ventilläge 50 %
 x;78.74015749947637;35.5;Nödkörning
 x;73.02546571435418;44.5;Nödkörning
-valve;56.567973992015055;49.0;Nödkörning - fast ventilläge 57 %
+flow;56.567973992015055;49.0;Nödkörning - fast tillopp 49 °C
 x;90.0;58.0;Nödkörning
-flow;91.19438557922447;37.5;Nödkörning - fast tillopp 38 °C
-flow;32.0;30.052472671086015;Nödkörning - fast tillopp 30 °C
-valve;25.5;38.95930540601579;Nödkörning - fast ventilläge 26 %
+valve;91.19438557922447;37.5;Nödkörning - fast ventilläge 91 %
+valve;32.0;30.052472671086015;Nödkörning - fast ventilläge 32 %
+flow;25.5;38.95930540601579;Nödkörning - fast tillopp 39 °C
 x;45.0;32.339534306665065;Nödkörning
 x;58.0;33.5;Nödkörning
-flow;4.0;67.5;Nödkörning - fast tillopp 68 °C
-flow;54.5;28.0;Nödkörning - fast tillopp 28 °C
-valve;60.278790049083696;68.50784143107096;Nödkörning - fast ventilläge 60 %
-valve;0.5;55.0;Nödkörning - fast ventilläge 0 %
-valve;79.5;59.869396258952285;Nödkörning - fast ventilläge 80 %
-valve;81.0;45.5;Nödkörning - fast ventilläge 81 %
+valve;4.0;67.5;Nödkörning - fast ventilläge 4 %
+valve;54.5;28.0;Nödkörning - fast ventilläge 54 %
+flow;60.278790049083696;68.50784143107096;Nödkörning - fast tillopp 69 °C
+flow;0.5;55.0;Nödkörning - fast tillopp 55 °C
+flow;79.5;59.869396258952285;Nödkörning - fast tillopp 60 °C
+flow;81.0;45.5;Nödkörning - fast tillopp 46 °C
 x;53.5;36.74796927741913;Nödkörning
-flow;23.5;38.0;Nödkörning - fast tillopp 38 °C
-flow;95.5;53.5;Nödkörning - fast tillopp 54 °C
-valve;15.64152427668124;62.0;Nödkörning - fast ventilläge 16 %
+valve;23.5;38.0;Nödkörning - fast ventilläge 24 %
+valve;95.5;53.5;Nödkörning - fast ventilläge 96 %
+flow;15.64152427668124;62.0;Nödkörning - fast tillopp 62 °C
 x;36.5;45.0;Nödkörning
 x;53.5;54.76569168670458;Nödkörning
-flow;95.5;61.0;Nödkörning - fast tillopp 61 °C
-flow;48.0;46.66278297545828;Nödkörning - fast tillopp 47 °C
+valve;95.5;61.0;Nödkörning - fast ventilläge 96 %
+valve;48.0;46.66278297545828;Nödkörning - fast ventilläge 48 %
 x;24.0;42.5;Nödkörning
-flow;10.0;49.00826835974728;Nödkörning - fast tillopp 49 °C
+valve;10.0;49.00826835974728;Nödkörning - fast ventilläge 10 %
 x;81.5;70.5;Nödkörning
-flow;100.0;60.5;Nödkörning - fast tillopp 60 °C
-valve;58.5;36.0;Nödkörning - fast ventilläge 58 %
+valve;100.0;60.5;Nödkörning - fast ventilläge 100 %
+flow;58.5;36.0;Nödkörning - fast tillopp 36 °C
 x;85.05427593040086;58.399009384600966;Nödkörning
-flow;60.0;32.0;Nödkörning - fast tillopp 32 °C
-flow;5.5;67.5;Nödkörning - fast tillopp 68 °C
-flow;47.0;35.5;Nödkörning - fast tillopp 36 °C
+valve;60.0;32.0;Nödkörning - fast ventilläge 60 %
+valve;5.5;67.5;Nödkörning - fast ventilläge 6 %
+valve;47.0;35.5;Nödkörning - fast ventilläge 47 %
 x;82.0;29.0;Nödkörning
-flow;23.5;33.5;Nödkörning - fast tillopp 34 °C
-valve;16.0;69.0;Nödkörning - fast ventilläge 16 %
-flow;74.0;53.0;Nödkörning - fast tillopp 53 °C
+valve;23.5;33.5;Nödkörning - fast ventilläge 24 %
+flow;16.0;69.0;Nödkörning - fast tillopp 69 °C
+valve;74.0;53.0;Nödkörning - fast ventilläge 74 %
 x;69.0;59.0;Nödkörning
 x;18.488839074669272;39.5;Nödkörning
 x;94.5;50.0;Nödkörning
-valve;83.0;63.0;Nödkörning - fast ventilläge 83 %
-valve;40.0;38.5;Nödkörning - fast ventilläge 40 %
-valve;33.5;47.83642884340501;Nödkörning - fast ventilläge 34 %
+flow;83.0;63.0;Nödkörning - fast tillopp 63 °C
+flow;40.0;38.5;Nödkörning - fast tillopp 38 °C
+flow;33.5;47.83642884340501;Nödkörning - fast tillopp 48 °C
 x;73.50528249374877;56.10219156595896;Nödkörning
-valve;13.0;21.244946560925147;Nödkörning - fast ventilläge 13 %
-flow;51.0;49.671099310762074;Nödkörning - fast tillopp 50 °C
+flow;13.0;21.244946560925147;Nödkörning - fast tillopp 21 °C
+valve;51.0;49.671099310762074;Nödkörning - fast ventilläge 51 %
 x;81.0;36.16492155420126;Nödkörning
-flow;67.5;21.5;Nödkörning - fast tillopp 22 °C
+valve;67.5;21.5;Nödkörning - fast ventilläge 68 %
 x;28.920960978844867;23.5;Nödkörning
-valve;28.0;64.0;Nödkörning - fast ventilläge 28 %
-flow;40.02241278582578;24.5;Nödkörning - fast tillopp 24 °C
-flow;45.0;27.00004350949098;Nödkörning - fast tillopp 27 °C
+flow;28.0;64.0;Nödkörning - fast tillopp 64 °C
+valve;40.02241278582578;24.5;Nödkörning - fast ventilläge 40 %
+valve;45.0;27.00004350949098;Nödkörning - fast ventilläge 45 %
 x;21.831686596863186;65.0;Nödkörning
-valve;22.0;64.0;Nödkörning - fast ventilläge 22 %
-flow;33.884784915553944;45.965199598398094;Nödkörning - fast tillopp 46 °C
-valve;89.0;53.28312551023115;Nödkörning - fast ventilläge 89 %
-valve;1.5;22.0;Nödkörning - fast ventilläge 2 %
+flow;22.0;64.0;Nödkörning - fast tillopp 64 °C
+valve;33.884784915553944;45.965199598398094;Nödkörning - fast ventilläge 34 %
+flow;89.0;53.28312551023115;Nödkörning - fast tillopp 53 °C
+flow;1.5;22.0;Nödkörning - fast tillopp 22 °C
 x;80.0;29.0;Nödkörning
 x;20.5;59.0;Nödkörning
 x;0.0;30.208935793054735;Nödkörning
 x;55.0;49.0;Nödkörning
-flow;45.5;24.207474621079577;Nödkörning - fast tillopp 24 °C
+valve;45.5;24.207474621079577;Nödkörning - fast ventilläge 46 %
 x;87.5;62.0;Nödkörning
-valve;56.5;37.67941755323342;Nödkörning - fast ventilläge 56 %
+flow;56.5;37.67941755323342;Nödkörning - fast tillopp 38 °C
 x;34.0;38.0;Nödkörning
-valve;42.0;67.0;Nödkörning - fast ventilläge 42 %
-valve;59.5;34.0;Nödkörning - fast ventilläge 60 %
+flow;42.0;67.0;Nödkörning - fast tillopp 67 °C
+flow;59.5;34.0;Nödkörning - fast tillopp 34 °C
 x;38.5;24.0;Nödkörning
-valve;83.75857147368822;62.39272592043317;Nödkörning - fast ventilläge 84 %
-valve;61.0;65.5;Nödkörning - fast ventilläge 61 %
-flow;21.241594443612822;40.5;Nödkörning - fast tillopp 40 °C
+flow;83.75857147368822;62.39272592043317;Nödkörning - fast tillopp 62 °C
+flow;61.0;65.5;Nödkörning - fast tillopp 66 °C
+valve;21.241594443612822;40.5;Nödkörning - fast ventilläge 21 %
 x;62.0;38.82845675453392;Nödkörning
-flow;48.5;33.0;Nödkörning - fast tillopp 33 °C
-flow;16.5;44.93828574692516;Nödkörning - fast tillopp 45 °C
+valve;48.5;33.0;Nödkörning - fast ventilläge 48 %
+valve;16.5;44.93828574692516;Nödkörning - fast ventilläge 16 %
 x;52.150382618103755;20.5;Nödkörning
 x;93.5;47.5;Nödkörning
-flow;76.5;50.909259206984615;Nödkörning - fast tillopp 51 °C
-flow;90.5;53.13612596787847;Nödkörning - fast tillopp 53 °C
-flow;62.5;21.266050646663707;Nödkörning - fast tillopp 21 °C
-flow;38.5;44.0;Nödkörning - fast tillopp 44 °C
-valve;69.06593046830577;52.5;Nödkörning - fast ventilläge 69 %
-valve;97.86342714321482;68.5;Nödkörning - fast ventilläge 98 %
-valve;30.0;35.0;Nödkörning - fast ventilläge 30 %
-flow;81.79256742023155;64.69126627169588;Nödkörning - fast tillopp 65 °C
-flow;54.34253253483548;33.5;Nödkörning - fast tillopp 34 °C
-flow;53.5;28.5;Nödkörning - fast tillopp 28 °C
+valve;76.5;50.909259206984615;Nödkörning - fast ventilläge 76 %
+valve;90.5;53.13612596787847;Nödkörning - fast ventilläge 90 %
+valve;62.5;21.266050646663707;Nödkörning - fast ventilläge 62 %
+valve;38.5;44.0;Nödkörning - fast ventilläge 38 %
+flow;69.06593046830577;52.5;Nödkörning - fast tillopp 52 °C
+flow;97.86342714321482;68.5;Nödkörning - fast tillopp 68 °C
+flow;30.0;35.0;Nödkörning - fast tillopp 35 °C
+valve;81.79256742023155;64.69126627169588;Nödkörning - fast ventilläge 82 %
+valve;54.34253253483548;33.5;Nödkörning - fast ventilläge 54 %
+valve;53.5;28.5;Nödkörning - fast ventilläge 54 %
 x;56.5;23.411174370971725;Nödkörning
-valve;44.5;31.9733221566211;Nödkörning - fast ventilläge 44 %
-flow;98.7777890132491;63.0;Nödkörning - fast tillopp 63 °C
+flow;44.5;31.9733221566211;Nödkörning - fast tillopp 32 °C
+valve;98.7777890132491;63.0;Nödkörning - fast ventilläge 99 %
 x;46.42588296962698;55.75012123132854;Nödkörning
 x;7.2654280097210755;57.5;Nödkörning
-flow;2.0;65.5;Nödkörning - fast tillopp 66 °C
-flow;61.0;49.6337276453722;Nödkörning - fast tillopp 50 °C
-valve;75.0;50.0;Nödkörning - fast ventilläge 75 %
-valve;11.5;44.71176157520634;Nödkörning - fast ventilläge 12 %
-flow;77.0;20.0;Nödkörning - fast tillopp 20 °C
+valve;2.0;65.5;Nödkörning - fast ventilläge 2 %
+valve;61.0;49.6337276453722;Nödkörning - fast ventilläge 61 %
+flow;75.0;50.0;Nödkörning - fast tillopp 50 °C
+flow;11.5;44.71176157520634;Nödkörning - fast tillopp 45 °C
+valve;77.0;20.0;Nödkörning - fast ventilläge 77 %
 x;55.279962559190864;25.5;Nödkörning
-flow;65.0;33.0;Nödkörning - fast tillopp 33 °C
-valve;87.07828471467592;63.0;Nödkörning - fast ventilläge 87 %
-flow;79.5;22.5;Nödkörning - fast tillopp 22 °C
-valve;95.0;65.0;Nödkörning - fast ventilläge 95 %
-flow;95.97492892563808;65.0;Nödkörning - fast tillopp 65 °C
-flow;48.5;57.5;Nödkörning - fast tillopp 58 °C
-valve;12.5;69.2236422926643;Nödkörning - fast ventilläge 12 %
-valve;30.39494423799719;44.5;Nödkörning - fast ventilläge 30 %
-flow;70.16406853460079;53.0;Nödkörning - fast tillopp 53 °C
+valve;65.0;33.0;Nödkörning - fast ventilläge 65 %
+flow;87.07828471467592;63.0;Nödkörning - fast tillopp 63 °C
+valve;79.5;22.5;Nödkörning - fast ventilläge 80 %
+flow;95.0;65.0;Nödkörning - fast tillopp 65 °C
+valve;95.97492892563808;65.0;Nödkörning - fast ventilläge 96 %
+valve;48.5;57.5;Nödkörning - fast ventilläge 48 %
+flow;12.5;69.2236422926643;Nödkörning - fast tillopp 69 °C
+flow;30.39494423799719;44.5;Nödkörning - fast tillopp 44 °C
+valve;70.16406853460079;53.0;Nödkörning - fast ventilläge 70 %
 x;15.8570019192957;65.5;Nödkörning
-flow;58.121098422076955;57.0;Nödkörning - fast tillopp 57 °C
-flow;85.5;69.02941899506558;Nödkörning - fast tillopp 69 °C
+valve;58.121098422076955;57.0;Nödkörning - fast ventilläge 58 %
+valve;85.5;69.02941899506558;Nödkörning - fast ventilläge 86 %
 x;22.68744304901723;22.98870999920965;Nödkörning
-flow;60.5;33.0;Nödkörning - fast tillopp 33 °C
-valve;29.0;29.0;Nödkörning - fast ventilläge 29 %
-valve;80.5;41.5;Nödkörning - fast ventilläge 80 %
+valve;60.5;33.0;Nödkörning - fast ventilläge 60 %
+flow;29.0;29.0;Nödkörning - fast tillopp 29 °C
+flow;80.5;41.5;Nödkörning - fast tillopp 42 °C
 x;7.0;44.5;Nödkörning
-flow;16.5;42.5;Nödkörning - fast tillopp 42 °C
+valve;16.5;42.5;Nödkörning - fast ventilläge 16 %
 x;99.0;22.5;Nödkörning
-valve;84.0;22.5;Nödkörning - fast ventilläge 84 %
-valve;38.38904889758693;21.170341416140808;Nödkörning - fast ventilläge 38 %
+flow;84.0;22.5;Nödkörning - fast tillopp 22 °C
+flow;38.38904889758693;21.170341416140808;Nödkörning - fast tillopp 21 °C
 x;57.5;63.5;Nödkörning
-valve;3.5;42.12028911794094;Nödkörning - fast ventilläge 4 %
-flow;59.5;64.68175368329159;Nödkörning - fast tillopp 65 °C
+flow;3.5;42.12028911794094;Nödkörning - fast tillopp 42 °C
+valve;59.5;64.68175368329159;Nödkörning - fast ventilläge 60 %
 x;58.26431289697533;63.5;Nödkörning
 x;60.0;23.790633702149954;Nödkörning
-valve;26.774467234862186;45.5;Nödkörning - fast ventilläge 27 %
+flow;26.774467234862186;45.5;Nödkörning - fast tillopp 46 °C
 x;29.5;38.0;Nödkörning
 x;81.40640218304155;32.5;Nödkörning
-valve;12.326607406318946;50.68649139163144;Nödkörning - fast ventilläge 12 %
-valve;19.0;38.5;Nödkörning - fast ventilläge 19 %
-valve;48.5;50.5;Nödkörning - fast ventilläge 48 %
-valve;1.9078926272196095;66.0;Nödkörning - fast ventilläge 2 %
-flow;38.0;53.0;Nödkörning - fast tillopp 53 °C
+flow;12.326607406318946;50.68649139163144;Nödkörning - fast tillopp 51 °C
+flow;19.0;38.5;Nödkörning - fast tillopp 38 °C
+flow;48.5;50.5;Nödkörning - fast tillopp 50 °C
+flow;1.9078926272196095;66.0;Nödkörning - fast tillopp 66 °C
+valve;38.0;53.0;Nödkörning - fast ventilläge 38 %
 x;19.5;38.0;Nödkörning
-flow;45.5;68.0;Nödkörning - fast tillopp 68 °C
+valve;45.5;68.0;Nödkörning - fast ventilläge 46 %
 x;16.0;63.24545246281108;Nödkörning
 x;83.5;59.66500697369968;Nödkörning
-valve;75.06626461468939;42.5;Nödkörning - fast ventilläge 75 %
-flow;29.204900178136285;49.0;Nödkörning - fast tillopp 49 °C
+flow;75.06626461468939;42.5;Nödkörning - fast tillopp 42 °C
+valve;29.204900178136285;49.0;Nödkörning - fast ventilläge 29 %
 x;33.5;53.70531140239888;Nödkörning
-flow;31.80565486712805;59.45358565691263;Nödkörning - fast tillopp 59 °C
-valve;52.5;25.0;Nödkörning - fast ventilläge 52 %
-flow;1.5;69.27779491449824;Nödkörning - fast tillopp 69 °C
-valve;25.50975579363125;55.0;Nödkörning - fast ventilläge 26 %
+valve;31.80565486712805;59.45358565691263;Nödkörning - fast ventilläge 32 %
+flow;52.5;25.0;Nödkörning - fast tillopp 25 °C
+valve;1.5;69.27779491449824;Nödkörning - fast ventilläge 2 %
+flow;25.50975579363125;55.0;Nödkörning - fast tillopp 55 °C
 x;28.0;35.5;Nödkörning
-flow;69.5;67.30294887791813;Nödkörning - fast tillopp 67 °C
-valve;30.68802603715578;59.5;Nödkörning - fast ventilläge 31 %
-flow;67.5;34.70311275762814;Nödkörning - fast tillopp 35 °C
-valve;79.5;60.07588501782786;Nödkörning - fast ventilläge 80 %
-valve;30.5;40.0;Nödkörning - fast ventilläge 30 %
+valve;69.5;67.30294887791813;Nödkörning - fast ventilläge 70 %
+flow;30.68802603715578;59.5;Nödkörning - fast tillopp 60 °C
+valve;67.5;34.70311275762814;Nödkörning - fast ventilläge 68 %
+flow;79.5;60.07588501782786;Nödkörning - fast tillopp 60 °C
+flow;30.5;40.0;Nödkörning - fast tillopp 40 °C
 x;28.0;30.654514241732805;Nödkörning
-valve;57.1121860633192;52.0;Nödkörning - fast ventilläge 57 %
+flow;57.1121860633192;52.0;Nödkörning - fast tillopp 52 °C
 x;31.0;60.5;Nödkörning
 x;68.5;70.0;Nödkörning
-flow;7.891401257287822;44.0;Nödkörning - fast tillopp 44 °C
+valve;7.891401257287822;44.0;Nödkörning - fast ventilläge 8 %
 x;68.5;66.46548102263014;Nödkörning
-flow;70.0;26.0;Nödkörning - fast tillopp 26 °C
-valve;10.5;65.21846080016425;Nödkörning - fast ventilläge 10 %
-flow;2.0;60.12331019535871;Nödkörning - fast tillopp 60 °C
-valve;23.47421299715;23.01823271545752;Nödkörning - fast ventilläge 23 %
-flow;39.5;58.0;Nödkörning - fast tillopp 58 °C
+valve;70.0;26.0;Nödkörning - fast ventilläge 70 %
+flow;10.5;65.21846080016425;Nödkörning - fast tillopp 65 °C
+valve;2.0;60.12331019535871;Nödkörning - fast ventilläge 2 %
+flow;23.47421299715;23.01823271545752;Nödkörning - fast tillopp 23 °C
+valve;39.5;58.0;Nödkörning - fast ventilläge 40 %
 x;71.18834938980237;51.0;Nödkörning
 x;61.5;59.801980261791044;Nödkörning
-valve;30.0;52.02189177760128;Nödkörning - fast ventilläge 30 %
-flow;100.0;28.5;Nödkörning - fast tillopp 28 °C
-valve;1.1466767413861323;43.5;Nödkörning - fast ventilläge 1 %
+flow;30.0;52.02189177760128;Nödkörning - fast tillopp 52 °C
+valve;100.0;28.5;Nödkörning - fast ventilläge 100 %
+flow;1.1466767413861323;43.5;Nödkörning - fast tillopp 44 °C
 x;79.5;63.1279808086554;Nödkörning
-valve;89.0;50.0;Nödkörning - fast ventilläge 89 %
-valve;32.5;45.81503941850767;Nödkörning - fast ventilläge 32 %
-valve;41.0;31.0;Nödkörning - fast ventilläge 41 %
-valve;74.0;52.5;Nödkörning - fast ventilläge 74 %
+flow;89.0;50.0;Nödkörning - fast tillopp 50 °C
+flow;32.5;45.81503941850767;Nödkörning - fast tillopp 46 °C
+flow;41.0;31.0;Nödkörning - fast tillopp 31 °C
+flow;74.0;52.5;Nödkörning - fast tillopp 52 °C
 x;4.564623537174484;26.698344786925887;Nödkörning
 x;82.49995321672918;59.885478931723156;Nödkörning
 x;4.0;28.0;Nödkörning
 x;22.0;20.5;Nödkörning
 x;19.0;36.6652283987554;Nödkörning
 x;11.465879429951386;55.0;Nödkörning
-flow;30.0;27.0;Nödkörning - fast tillopp 27 °C
+valve;30.0;27.0;Nödkörning - fast ventilläge 30 %
 x;59.259126291383765;33.25160260363451;Nödkörning
 x;52.5;44.00945781234722;Nödkörning
-valve;97.53403731591493;43.5;Nödkörning - fast ventilläge 98 %
-flow;42.5;29.0;Nödkörning - fast tillopp 29 °C
-flow;68.5;32.0;Nödkörning - fast tillopp 32 °C
+flow;97.53403731591493;43.5;Nödkörning - fast tillopp 44 °C
+valve;42.5;29.0;Nödkörning - fast ventilläge 42 %
+valve;68.5;32.0;Nödkörning - fast ventilläge 68 %
 x;43.390951370140485;65.0;Nödkörning
-valve;41.5;37.719038825280485;Nödkörning - fast ventilläge 42 %
-flow;54.18032293683856;63.0;Nödkörning - fast tillopp 63 °C
+flow;41.5;37.719038825280485;Nödkörning - fast tillopp 38 °C
+valve;54.18032293683856;63.0;Nödkörning - fast ventilläge 54 %
 x;18.0;66.6904712470692;Nödkörning
-valve;52.5666133079263;37.90693726236103;Nödkörning - fast ventilläge 53 %
-valve;49.86668740897093;22.447856445097262;Nödkörning - fast ventilläge 50 %
-flow;56.0;65.5;Nödkörning - fast tillopp 66 °C
-valve;21.016701516811953;28.0;Nödkörning - fast ventilläge 21 %
-flow;56.5;29.5;Nödkörning - fast tillopp 30 °C
-flow;24.766165045907652;24.5;Nödkörning - fast tillopp 24 °C
+flow;52.5666133079263;37.90693726236103;Nödkörning - fast tillopp 38 °C
+flow;49.86668740897093;22.447856445097262;Nödkörning - fast tillopp 22 °C
+valve;56.0;65.5;Nödkörning - fast ventilläge 56 %
+flow;21.016701516811953;28.0;Nödkörning - fast tillopp 28 °C
+valve;56.5;29.5;Nödkörning - fast ventilläge 56 %
+valve;24.766165045907652;24.5;Nödkörning - fast ventilläge 25 %
 x;83.0;28.524058358635973;Nödkörning
 x;91.5;65.0;Nödkörning
-valve;43.0493809343685;59.0;Nödkörning - fast ventilläge 43 %
+flow;43.0493809343685;59.0;Nödkörning - fast tillopp 59 °C
 x;71.5;44.5;Nödkörning
 x;79.0;67.5;Nödkörning
 x;5.374527902222026;67.5;Nödkörning
 x;39.016336126653215;22.5;Nödkörning
 x;89.5;28.0;Nödkörning
-flow;2.5;48.5;Nödkörning - fast tillopp 48 °C
-flow;99.0;39.7389032002154;Nödkörning - fast tillopp 40 °C
+valve;2.5;48.5;Nödkörning - fast ventilläge 2 %
+valve;99.0;39.7389032002154;Nödkörning - fast ventilläge 99 %
 x;17.66733746176611;48.07079304023746;Nödkörning
-valve;7.5;54.5;Nödkörning - fast ventilläge 8 %
+flow;7.5;54.5;Nödkörning - fast tillopp 54 °C
 x;44.0;69.0;Nödkörning
 x;46.0;35.0;Nödkörning
-valve;67.0;63.04474432860531;Nödkörning - fast ventilläge 67 %
-valve;9.129164497271836;52.5;Nödkörning - fast ventilläge 9 %
+flow;67.0;63.04474432860531;Nödkörning - fast tillopp 63 °C
+flow;9.129164497271836;52.5;Nödkörning - fast tillopp 52 °C
 x;83.5;56.19078826791192;Nödkörning
 x;93.0;38.0;Nödkörning
-flow;16.0;54.0;Nödkörning - fast tillopp 54 °C
-valve;95.48961016181295;52.0;Nödkörning - fast ventilläge 95 %
+valve;16.0;54.0;Nödkörning - fast ventilläge 16 %
+flow;95.48961016181295;52.0;Nödkörning - fast tillopp 52 °C
 x;42.5;69.0;Nödkörning
-valve;41.568927382943976;54.309576832936486;Nödkörning - fast ventilläge 42 %
+flow;41.568927382943976;54.309576832936486;Nödkörning - fast tillopp 54 °C
 x;16.0;58.5;Nödkörning
 x;23.5;47.0;Nödkörning
-flow;9.0;57.857723410713035;Nödkörning - fast tillopp 58 °C
-flow;95.79676071997125;46.5;Nödkörning - fast tillopp 46 °C
-flow;26.0;44.0;Nödkörning - fast tillopp 44 °C
-flow;98.0;33.5;Nödkörning - fast tillopp 34 °C
-flow;9.5;57.5;Nödkörning - fast tillopp 58 °C
-valve;40.13260551296296;28.5;Nödkörning - fast ventilläge 40 %
-valve;26.5;29.0;Nödkörning - fast ventilläge 26 %
-flow;53.0;21.5;Nödkörning - fast tillopp 22 °C
-flow;76.61268306126382;36.5;Nödkörning - fast tillopp 36 °C
+valve;9.0;57.857723410713035;Nödkörning - fast ventilläge 9 %
+valve;95.79676071997125;46.5;Nödkörning - fast ventilläge 96 %
+valve;26.0;44.0;Nödkörning - fast ventilläge 26 %
+valve;98.0;33.5;Nödkörning - fast ventilläge 98 %
+valve;9.5;57.5;Nödkörning - fast ventilläge 10 %
+flow;40.13260551296296;28.5;Nödkörning - fast tillopp 28 °C
+flow;26.5;29.0;Nödkörning - fast tillopp 29 °C
+valve;53.0;21.5;Nödkörning - fast ventilläge 53 %
+valve;76.61268306126382;36.5;Nödkörning - fast ventilläge 77 %
 x;13.473870045597035;36.0;Nödkörning
-flow;89.0;26.128708444634217;Nödkörning - fast tillopp 26 °C
+valve;89.0;26.128708444634217;Nödkörning - fast ventilläge 89 %
 x;70.01386176980456;30.0;Nödkörning
 x;77.51311976909666;57.22001510961322;Nödkörning
-flow;11.0;49.5;Nödkörning - fast tillopp 50 °C
+valve;11.0;49.5;Nödkörning - fast ventilläge 11 %
 x;79.62873455579556;43.5;Nödkörning
 x;37.0;44.0;Nödkörning
 x;93.61494772818985;63.03742730220154;Nödkörning
-flow;13.0;42.517618890442996;Nödkörning - fast tillopp 43 °C
-valve;90.57812615906286;36.03556469984755;Nödkörning - fast ventilläge 91 %
-valve;66.5;39.0;Nödkörning - fast ventilläge 66 %
-valve;5.31319735800968;55.17876118522596;Nödkörning - fast ventilläge 5 %
-valve;56.850421153503326;20.0;Nödkörning - fast ventilläge 57 %
+valve;13.0;42.517618890442996;Nödkörning - fast ventilläge 13 %
+flow;90.57812615906286;36.03556469984755;Nödkörning - fast tillopp 36 °C
+flow;66.5;39.0;Nödkörning - fast tillopp 39 °C
+flow;5.31319735800968;55.17876118522596;Nödkörning - fast tillopp 55 °C
+flow;56.850421153503326;20.0;Nödkörning - fast tillopp 20 °C
 x;30.5;42.954563583531865;Nödkörning
-valve;68.0;62.74499683178427;Nödkörning - fast ventilläge 68 %
-valve;73.5;38.5;Nödkörning - fast ventilläge 74 %
-flow;92.0;30.0;Nödkörning - fast tillopp 30 °C
+flow;68.0;62.74499683178427;Nödkörning - fast tillopp 63 °C
+flow;73.5;38.5;Nödkörning - fast tillopp 38 °C
+valve;92.0;30.0;Nödkörning - fast ventilläge 92 %
 x;28.5;32.18573682709436;Nödkörning
-valve;81.5661156728159;66.0;Nödkörning - fast ventilläge 82 %
+flow;81.5661156728159;66.0;Nödkörning - fast tillopp 66 °C
 x;51.0;51.0;Nödkörning
-valve;81.5;25.5;Nödkörning - fast ventilläge 82 %
-flow;83.0;21.0;Nödkörning - fast tillopp 21 °C
-flow;33.5;51.5;Nödkörning - fast tillopp 52 °C
+flow;81.5;25.5;Nödkörning - fast tillopp 26 °C
+valve;83.0;21.0;Nödkörning - fast ventilläge 83 %
+valve;33.5;51.5;Nödkörning - fast ventilläge 34 %
 x;60.5;58.5;Nödkörning
-flow;62.0;46.41777179538082;Nödkörning - fast tillopp 46 °C
-flow;5.0;38.0;Nödkörning - fast tillopp 38 °C
-flow;32.72413274089683;26.801311827009;Nödkörning - fast tillopp 27 °C
-valve;67.78237134822082;66.0;Nödkörning - fast ventilläge 68 %
+valve;62.0;46.41777179538082;Nödkörning - fast ventilläge 62 %
+valve;5.0;38.0;Nödkörning - fast ventilläge 5 %
+valve;32.72413274089683;26.801311827009;Nödkörning - fast ventilläge 33 %
+flow;67.78237134822082;66.0;Nödkörning - fast tillopp 66 °C

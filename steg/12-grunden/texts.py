@@ -553,6 +553,7 @@ def heat_source_reason(wanted: bool | None, flags: list[str], for_hot_water: boo
 # sensors, a flag it had no words for (2026-10-18).
 FLAG_TEXTS = {
     "indoor_partial": "Någon innegivare räknas inte in just nu - regleringen kör vidare med de andra.",
+    "cold_boiler": "Håller igen shunten medan pannan kommer upp i temperatur - annars drar starten ner den under larmgränsen.",
 }
 
 

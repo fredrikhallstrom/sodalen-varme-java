@@ -615,6 +615,22 @@ class Tuning:
     # (shelly/boiler_guard.js), for when Home Assistant is down.
     boiler_max: float = 95.0
     boiler_max_release: float = 85.0
+    # The cold boiler's guard: how far the valve may open while the boiler
+    # is near the burner's alarm limit (ControlInputs.boiler_limit). From
+    # cold_boiler_clearance degrees over the limit and down the valve gets
+    # cold_boiler_floor percent, cold_boiler_band degrees further up it is
+    # free, and a straight line between. A pellet burner that has gone out
+    # in a long stop gives no heat for a quarter of an hour after it is
+    # called, and the first start after a setback on 2026-11-06 opened the
+    # shunt to 50-61 % against a cold loop and drew the boiler from 66 to 49
+    # in twenty minutes, twice, once through the alarm. Held back, the
+    # boiler waits out the lighting a couple of degrees over its limit and
+    # the house gets its supply twenty minutes later (tests/test_cold_boiler.py).
+    # The clearance is what keeps it from hovering on the limit itself,
+    # where a tenth of a degree is the alarm. Nought band switches it off.
+    cold_boiler_band: float = 10.0
+    cold_boiler_clearance: float = 2.0
+    cold_boiler_floor: float = 10.0
 
     # --- Inner loop: flow temperature -> valve position ------------------
     cycle_seconds: float = 30.0
@@ -1247,6 +1263,11 @@ class ControlInputs:
     # or recovering: a boiler cooling while it should burn. The same opening
     # then gives less supply every hour, so the valve's gain is not learnt.
     boiler_failing: bool = False
+    # The burner's alarm limit (burner.py, alarm_below), under which the
+    # boiler watch calls it gone out. The cold boiler's guard holds the valve
+    # back as the boiler nears it - see Tuning.cold_boiler_band. None without
+    # a burner, and the guard does nothing.
+    boiler_limit: float | None = None
     # True while the burner is kept off for a sweep (sweep.py). Outranks even
     # the hot water: the sweeper's brush goes where the flame was.
     sweeping: bool = False
@@ -1325,6 +1346,10 @@ class ControlOutput:
     # alone would have had it off.
     burner_for_hot_water: bool = False
     boiler_overheated: bool = False
+    # The most the valve may open this cycle for the cold boiler's guard, in
+    # percent, or None while the boiler is warm enough for the valve to be
+    # free. The flag "cold_boiler" says when it actually held the valve back.
+    cold_boiler_cap: float | None = None
     # Sensors that are missing or stale.
     degraded: list[str] = field(default_factory=list)
     # Control decisions worth showing, e.g. the delta term being held back

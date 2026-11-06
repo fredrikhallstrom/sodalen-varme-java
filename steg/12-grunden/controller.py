@@ -346,9 +346,14 @@ class HeatingController:
 
         out.boiler_overheated = self._boiler_overheated(inputs.boiler)
         heat_source = self._heat_source(mode, dt, inputs.hot_water, out, inputs.sweeping)
+        inner_mode = self._inner_mode(inputs, mode, emergency)
+        cap = self._cold_boiler_cap(inputs) if inner_mode == MODE_HEATING else None
         target, flow_error, effective_kp = self._inner_loop(
-            inputs, self._inner_mode(inputs, mode, emergency), flow_setpoint, control_dt
+            inputs, inner_mode, flow_setpoint, control_dt, cap=cap
         )
+        out.cold_boiler_cap = cap
+        if cap is not None and target >= cap - 0.01:
+            out.flags.append("cold_boiler")
 
         if mode != MODE_HEATING:
             # The heating-only learners stand still in every other mode, and
@@ -921,6 +926,31 @@ class HeatingController:
 
         return MODE_HEATING
 
+    def _cold_boiler_cap(self, inputs: ControlInputs) -> float | None:
+        """How far the valve may open for the boiler's sake, in percent, or
+        None while the boiler is warm enough to be left alone.
+
+        A boiler drawn down under the burner's alarm limit by the shunt is
+        the regulation's own doing, and the watch cannot tell it from a
+        burner gone out. The first start after a setback is where it
+        happens: the loop is cold, the setpoint high, and a pellet burner
+        that went out in the stop is minutes from any heat. So the opening
+        follows the boiler: cold_boiler_floor from cold_boiler_clearance
+        over the limit and down, free cold_boiler_band further up, a line
+        between. A line rather than a switch, for the same reason as the
+        delta's weight - a boiler sitting on the line would flip the valve
+        every cycle.
+        """
+        tuning = self.tuning
+        if (tuning.cold_boiler_band <= 0.0 or inputs.boiler is None
+                or inputs.boiler_limit is None):
+            return None
+        over = float(inputs.boiler) - float(inputs.boiler_limit) - tuning.cold_boiler_clearance
+        if over >= tuning.cold_boiler_band:
+            return None
+        floor = _clamp(tuning.cold_boiler_floor, 0.0, 100.0)
+        return floor + (100.0 - floor) * _clamp(over / tuning.cold_boiler_band, 0.0, 1.0)
+
     def _boiler_overheated(self, boiler: float | None) -> bool:
         """Whether the boiler is too hot for the burner: tripped at
         boiler_max, held until it has cooled to boiler_max_release, and held
@@ -1301,9 +1331,15 @@ class HeatingController:
         mode: str,
         flow_setpoint: float,
         control_dt: float,
+        cap: float | None = None,
     ) -> tuple[float, float | None, float]:
+        """The valve position for this cycle. `cap` is the most it may open,
+        when something outside the loop - the cold boiler's guard - says so;
+        the loop saturates on it like an end stop, integral and all, so it
+        comes off it the moment the cap lifts."""
         tuning = self.tuning
         state = self.state
+        top = 100.0 if cap is None else _clamp(cap, 0.0, 100.0)
 
         if mode in MODES_STOPPED:
             state.integral = 0.0
@@ -1359,7 +1395,7 @@ class HeatingController:
         state.last_kp = effective_kp
 
         if state.needs_reseed or state.position is None:
-            state.resume_position = self._resume_position(inputs, flow_setpoint)
+            state.resume_position = min(top, self._resume_position(inputs, flow_setpoint))
             state.resume_hold_left = tuning.resume_hold_seconds
             state.integral = bumpless_integral(position=state.resume_position)
             state.needs_reseed = False
@@ -1376,7 +1412,7 @@ class HeatingController:
             if flow < flow_setpoint and state.resume_hold_left > 0.0:
                 state.last_flow = flow
                 state.last_feedforward = None
-                return state.resume_position, flow_setpoint - flow, effective_kp
+                return min(top, state.resume_position), flow_setpoint - flow, effective_kp
             state.resume_hold_left = 0.0
             state.integral = _clamp(
                 state.resume_position
@@ -1397,6 +1433,7 @@ class HeatingController:
             ti=tuning.pid_ti,
             td=tuning.pid_td,
             deadband=tuning.pid_deadband,
+            out_max=top,
         )
         state.integral = result.integral
         state.last_flow = flow
@@ -1614,7 +1651,7 @@ class HeatingController:
             cause = "sweep"
         elif mode == MODE_COAST:
             cause = "coast"
-        elif self._fell_short(mode, inputs, out.flow_setpoint):
+        elif self._fell_short(mode, inputs, out.flow_setpoint, out.cold_boiler_cap):
             cause = "shortfall"
             state.seconds_since_shortfall = 0.0
         elif mode == MODE_OFF:
@@ -1647,16 +1684,20 @@ class HeatingController:
             return False
         return (indoor - indoor_slow) / span >= self.tuning.learn_target_warming
 
-    def _fell_short(self, mode: str, inputs: ControlInputs, flow_setpoint: float | None) -> bool:
-        """The heat source not keeping up: the valve at its open end and the
-        supply still further under its setpoint than learning tolerates.
-        A wide-open valve that meets the setpoint is a cold day, and a
-        supply short while the valve is still opening is the valve."""
+    def _fell_short(self, mode: str, inputs: ControlInputs, flow_setpoint: float | None,
+                    cap: float | None = None) -> bool:
+        """The heat source not keeping up: the valve at its open end - or as
+        far as the cold boiler's guard lets it go, a boiler too cold to be
+        drawn from being the heat source falling short too - and the supply
+        still further under its setpoint than learning tolerates. A
+        wide-open valve that meets the setpoint is a cold day, and a supply
+        short while the valve is still opening is the valve."""
         tuning = self.tuning
         if mode != MODE_HEATING or flow_setpoint is None or inputs.flow is None:
             return False
         position = inputs.position if inputs.position is not None else self.state.position
-        return (position >= 100.0 - tuning.learn_position_margin
+        top = 100.0 if cap is None else cap
+        return (position >= top - tuning.learn_position_margin
                 and flow_setpoint - inputs.flow > tuning.learn_max_flow_error)
 
     def _evidence_gates_open(
