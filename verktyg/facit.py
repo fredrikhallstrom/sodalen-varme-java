@@ -2002,6 +2002,243 @@ def controller(core, rng) -> None:
     write(step, "emergency_reason.csv", ["kind", "position", "flow", "expected"], rows)
 
 
+def _clocks(state, names) -> dict:
+    return {name: getattr(state, name) for name in names}
+
+
+def cycle_start(core, rng) -> None:
+    """Steg 13, cykelns början: _outdoor, _indoor, _timers, _curve_outdoor och kurvan."""
+    m, c, th = core.model, core.controller, core.thermal
+    step = "13-ute-inne-kurvan"
+    keys = ["sensor.tak_hall", "sensor.tak_kok", "sensor.solrum", "sensor.sovrum", "sensor.kontor"]
+
+    def reading(i, temperature, role, weight, offset=0.0, stratification=0.0, active=True, featured=False):
+        return m.SensorReading(key=keys[i], temperature=temperature, role=role, weight=weight, offset=offset,
+                               stratification=stratification, active=active, featured=featured)
+
+    def maybe(value, chance=0.2):
+        return None if rng.random() < chance else value
+
+    def temperature(low, high):
+        return round(rng.uniform(low, high), rng.choice([1, 2, 6]))
+
+    def a_dt():
+        return rng.choice([30.0, 30.0, 0.0, 600.0, 3600.0, round(rng.uniform(1.0, 7200.0), 3)])
+
+    def loop(**tuning):
+        return c.HeatingController(m.Tuning(**tuning), m.LearnedState())
+
+    # --- _outdoor: kanterna först. Aldrig mätt (dimensionerande kyla), prognosen i stället för en
+    # saknad givare (på gränsen 1,5 h är den med, 1,6 h inte), sommarfiltret utan värde, filter
+    # utan tidskonstant, en cykel utan tid.
+    def slots():
+        if rng.random() < 0.4:
+            return []
+        weather, hours = [], rng.choice([0.5, 1.0, 1.5, 1.6, 3.0, round(rng.uniform(0.0, 4.0), 2)])
+        for _ in range(rng.choice([1, 1, 2, 3])):
+            weather.append((hours, th.Conditions(
+                outdoor=temperature(-20.0, 25.0), wind=maybe(round(rng.uniform(0.0, 10.0), 1), 0.5),
+                bearing=maybe(round(rng.uniform(0.0, 360.0), 0), 0.5), sun=rng.choice([0.0, round(rng.uniform(0.0, 0.8), 3)]),
+                hour=maybe(round(rng.uniform(0.0, 24.0), 1), 0.5))))
+            hours += rng.choice([1.0, 3.0])
+        return weather
+
+    day, three = 24.0 * 3600.0, 3.0 * 3600.0
+    made = [
+        (-18.0, (three, None), (day, None), None, [], 30.0),
+        (-18.0, (three, None), (day, None), None, [(0.5, th.Conditions(outdoor=-5.0))], 30.0),
+        (-18.0, (three, 5.0), (day, 5.0), None, [(1.5, th.Conditions(outdoor=-5.0))], 30.0),
+        (-18.0, (three, 5.0), (day, 5.0), None, [(1.6, th.Conditions(outdoor=-5.0))], 30.0),
+        (-18.0, (three, 5.0), (day, 5.0), None, [(3.0, th.Conditions(outdoor=-5.0))], 30.0),
+        (-18.0, (three, 5.0), (day, None), None, [], 30.0),
+        (-18.0, (three, 5.0), (day, None), 0.0, [], 30.0),
+        (-18.0, (three, None), (day, 5.0), None, [], 30.0),
+        (-22.0, (three, 5.0), (day, 5.0), 5.0, [(0.5, th.Conditions(outdoor=-5.0))], 30.0),
+        (-18.0, (0.0, 5.0), (day, 5.0), 0.0, [], 30.0),
+        (-18.0, (three, 5.0), (day, 5.0), 0.0, [], 0.0),
+    ]
+    for _ in range(600):
+        made.append((
+            rng.choice([-18.0, -18.0, -22.0, round(rng.uniform(-30.0, -5.0), 1)]),
+            (rng.choice([three, three, 0.0, round(rng.uniform(60.0, 6.0 * 3600.0), 1)]), maybe(temperature(-20.0, 25.0))),
+            (rng.choice([day, day, round(rng.uniform(3600.0, 72.0 * 3600.0), 1)]), maybe(temperature(-20.0, 25.0), 0.35)),
+            maybe(temperature(-25.0, 30.0), 0.4),
+            slots(),
+            a_dt(),
+        ))
+    rows = []
+    for design, (o_seconds, o_before), (s_seconds, s_before), measured, weather, dt in made:
+        made_loop = loop(design_outdoor=design, outdoor_filter_seconds=o_seconds, summer_filter_seconds=s_seconds)
+        made_loop.state.outdoor.value = o_before
+        made_loop.state.outdoor_summer.value = s_before
+        out = m.ControlOutput()
+        filtered, summer = made_loop._outdoor(m.ControlInputs(dt=dt, outdoor=measured, forecast=weather), dt, out)
+        rows.append([design, o_seconds, o_before, s_seconds, s_before, measured, _slots(weather), dt,
+                     filtered, summer, ",".join(out.degraded), ",".join(out.flags),
+                     made_loop.state.outdoor.value, made_loop.state.outdoor_summer.value])
+    write(step, "outdoor.csv", ["design_outdoor", "outdoor_seconds", "outdoor_before", "summer_seconds", "summer_before",
+                                "measured", "forecast", "dt", "filtered", "summer", "degraded", "flags",
+                                "outdoor_after", "summer_after"], rows)
+
+    # --- _indoor: inga givare, givare som tappat värdet (filtret står kvar men svaret är None),
+    # en av två borta (indoor_partial), en viktlös (räknas inte som bidragande), inget tillopp.
+    twenty, two = 20.0 * 60.0, 2.0 * 3600.0
+    made = [
+        (21.0, 1.5, 45.0, [reading(0, None, m.ROLE_ROOM, 1.0)], (twenty, None), (two, None), 30.0),
+        (21.0, 1.5, 45.0, [reading(0, None, m.ROLE_ROOM, 1.0)], (twenty, 17.0), (two, 17.5), 30.0),
+        (21.0, 1.5, 45.0, [reading(0, 21.0, m.ROLE_ROOM, 1.0), reading(1, None, m.ROLE_ROOM, 1.0)], (twenty, None), (two, None), 30.0),
+        (21.0, 1.5, 45.0, [reading(0, 21.0, m.ROLE_ROOM, 1.0), reading(1, 21.5, m.ROLE_ROOM, 0.0)], (twenty, 20.0), (two, 20.0), 30.0),
+        (21.0, 1.5, 45.0, [reading(0, 21.0, m.ROLE_ROOM, 1.0), reading(1, 21.5, m.ROLE_ROOM, 1.0, active=False)], (twenty, 20.0), (two, 20.0), 30.0),
+        (21.0, 1.5, 45.0, [], (twenty, 20.0), (two, 20.0), 30.0),
+        (21.0, 1.5, None, [reading(0, 17.0, m.ROLE_ROOM, 1.0)], (twenty, 21.0), (two, 21.0), 3600.0),
+        (21.0, 1.5, 45.0, [reading(0, 17.0, m.ROLE_ROOM, 1.0)], (0.0, 21.0), (two, 21.0), 30.0),
+    ]
+    for _ in range(600):
+        count = rng.choice([0, 1, 1, 2, 3, 3, 4])
+        made.append((
+            rng.choice([21.0, round(rng.uniform(18.0, 24.0), 1)]),
+            rng.choice([1.5, round(rng.uniform(0.0, 3.0), 2)]),
+            None if rng.random() < 0.15 else round(rng.uniform(15.0, 70.0), rng.choice([1, 3])),
+            [reading(i, None if rng.random() < 0.15 else temperature(14.0, 32.0), rng.choice(m.ROLES),
+                     rng.choice([1.0, 0.5, 0.15, 0.0, -0.3, round(rng.uniform(0.05, 1.5), 3)]),
+                     offset=rng.choice([0.0, 0.0, round(rng.uniform(-1.5, 1.5), 2)]),
+                     stratification=rng.choice([0.0, 0.0, round(rng.uniform(0.01, 0.1), 3)]),
+                     active=rng.random() < 0.85, featured=rng.random() < 0.2)
+             for i in range(count)],
+            (rng.choice([twenty, twenty, 0.0, round(rng.uniform(60.0, 3600.0), 1)]), maybe(temperature(16.0, 26.0), 0.3)),
+            (rng.choice([two, two, round(rng.uniform(600.0, 6.0 * 3600.0), 1)]), maybe(temperature(16.0, 26.0), 0.3)),
+            a_dt(),
+        ))
+    rows = []
+    for target, clamp, flow, readings, (i_seconds, i_before), (s_seconds, s_before), dt in made:
+        made_loop = loop(room_target=target, solar_clamp=clamp, indoor_filter_seconds=i_seconds,
+                         indoor_slow_filter_seconds=s_seconds)
+        made_loop.state.indoor.value = i_before
+        made_loop.state.indoor_slow.value = s_before
+        out = m.ControlOutput()
+        fused, slow = made_loop._indoor(m.ControlInputs(dt=dt, flow=flow, indoor=readings), dt, out)
+        rows.append([target, clamp, flow, i_seconds, i_before, s_seconds, s_before, dt,
+                     "|".join(_sensor(r) for r in readings), fused, slow, ",".join(out.flags), ",".join(out.degraded),
+                     ",".join(_bool(d.contributed) for d in out.indoor_readings),
+                     made_loop.state.indoor.value, made_loop.state.indoor_slow.value])
+    write(step, "indoor.csv", ["room_target", "solar_clamp", "flow", "indoor_seconds", "indoor_before", "slow_seconds",
+                               "slow_before", "dt", "readings", "fused", "slow", "flags", "degraded", "contributed",
+                               "indoor_after", "slow_after"], rows)
+
+    # --- _timers: klockorna före och efter, som "namn=f:tal|..." i en fast ordning.
+    clocks = ["seconds_since_override", "seconds_since_target_change", "seconds_since_coast", "seconds_since_sun",
+              "seconds_over_target", "seconds_since_sweep", "seconds_since_shortfall", "seconds_since_off",
+              "seconds_since_failsafe", "seconds_without_flow"]
+    fixed = [
+        # (learn_sunlight, room_target, learn_over_target, sun_heat_seconds, dt, override, emergency, target_changed,
+        #  sunlight, elevation, cloud, sweeping, since_failsafe, flow, ret, sun_heat_before, slow_before, clocks before)
+        (0.047, 21.0, 0.3, three, 30.0, False, "", False, 0.047, None, None, False, None, 45.0, 38.0, None, 21.3, None),
+        (0.047, 21.0, 0.3, three, 30.0, False, "", False, 0.0471, None, None, False, None, 45.0, 38.0, 0.1, 21.31, None),
+        (0.047, 21.0, 0.3, three, 30.0, False, "valve", False, None, 20.0, 0.5, False, -30.0, None, None, None, None, None),
+        (0.047, 21.0, 0.3, three, 30.0, False, "flow", True, None, None, None, True, 0.0, 45.0, None, 0.2, 25.0, None),
+        (0.047, 21.0, 0.3, three, 30.0, True, "x", False, None, None, None, False, 5000.0, 45.0, 38.0, 0.2, 20.0,
+         {"seconds_since_failsafe": 60.0}),
+        (0.047, 21.0, 0.3, three, 0.0, False, "", False, 0.3, None, None, False, 30.0, 45.0, 38.0, None, 22.0, None),
+    ]
+    rows = []
+    for i in range(900):
+        if i < len(fixed):
+            (learn_sunlight, target, over, sun_seconds, dt, override, emergency, changed, light, elevation, cloud,
+             sweeping, since_failsafe, flow, ret, sun_before, slow_before, given) = fixed[i]
+        else:
+            learn_sunlight = rng.choice([0.047, 0.047, 0.0, round(rng.uniform(0.0, 0.3), 3)])
+            target = rng.choice([21.0, 21.0, temperature(18.0, 24.0)])
+            over = rng.choice([0.3, 0.3, 0.0, round(rng.uniform(0.0, 1.0), 2)])
+            sun_seconds = rng.choice([three, three, 600.0])
+            dt = a_dt()
+            override, changed, sweeping = rng.random() < 0.2, rng.random() < 0.15, rng.random() < 0.15
+            emergency = rng.choice(["", "", "", "valve", "flow", "x"])
+            light = rng.choice([None, 0.0, 0.047, 0.0471, 0.1, round(rng.uniform(0.0, 0.5), 4)])
+            elevation, cloud = maybe(round(rng.uniform(-10.0, 60.0), 2), 0.4), maybe(round(rng.uniform(0.0, 1.0), 2), 0.4)
+            since_failsafe = rng.choice([None, None, 0.0, 30.0, -30.0, 5000.0, round(rng.uniform(-100.0, 100000.0), 1)])
+            flow, ret = maybe(temperature(20.0, 70.0), 0.25), maybe(temperature(20.0, 60.0), 0.25)
+            sun_before, slow_before = maybe(round(rng.uniform(0.0, 0.5), 4)), maybe(temperature(18.0, 25.0), 0.25)
+            given = None
+        made_loop = loop(learn_sunlight=learn_sunlight, room_target=target, learn_over_target=over,
+                         sun_heat_seconds=sun_seconds)
+        state = made_loop.state
+        for name in clocks:
+            setattr(state, name, rng.choice([0.0, 1e6, 1e6, round(rng.uniform(0.0, 90000.0), 3)]))
+        for name, value in (given or {}).items():
+            setattr(state, name, value)
+        state.sun_heat.value = sun_before
+        state.indoor_slow.value = slow_before
+        before = _clocks(state, clocks)
+        out = m.ControlOutput()
+        made_loop._timers(m.ControlInputs(
+            dt=dt, override_active=override, emergency=emergency, target_changed=changed, sunlight=light,
+            sun_elevation=elevation, cloud=cloud, sweeping=sweeping, since_failsafe=since_failsafe, flow=flow, ret=ret,
+        ), dt, out)
+        rows.append([learn_sunlight, target, over, sun_seconds, dt, _bool(override), emergency, _bool(changed), light,
+                     elevation, cloud, _bool(sweeping), since_failsafe, flow, ret, sun_before, slow_before,
+                     _stored(before), _stored(_clocks(state, clocks)), state.sun_heat.value, ",".join(out.degraded)])
+    write(step, "timers.csv", ["learn_sunlight", "room_target", "learn_over_target", "sun_heat_seconds", "dt", "override",
+                               "emergency", "target_changed", "sunlight", "sun_elevation", "cloud", "sweeping",
+                               "since_failsafe", "flow", "ret", "sun_heat_before", "slow_before", "before", "after",
+                               "sun_heat_after", "degraded"], rows)
+
+    # --- kurvan: _curve_outdoor, _curve, effective_slope, balance, curvature och curve_at.
+    curve_fields = ["room_target", "design_outdoor", "curve_slope", "curve_curvature", "slope_min", "slope_max",
+                    "flow_min", "flow_max", "outdoor_fall_lead", "outdoor_fall_limit"]
+    fixed = [
+        (dict(), dict(), None, 0.0, 5.0, None, None, None),
+        (dict(room_target=21.0, design_outdoor=-18.0, curve_slope=0.9), dict(), -18.0, -18.0, -18.0, None, None, None),
+        (dict(curve_curvature=1.0), dict(slope_trim=0.2), -10.0, -10.0, 5.0, None, None, None),
+        (dict(curve_curvature=1.0), dict(balance_shift=-6.0), -10.0, -10.0, 16.0, None, None, None),
+        (dict(), dict(), -4.0, 0.0, 0.0, None, None, None),
+        (dict(), dict(), -20.0, 0.0, 0.0, None, None, None),
+        (dict(outdoor_fall_lead=1.0), dict(), -4.0, 0.0, 0.0, None, None, None),
+        (dict(outdoor_fall_lead=0.0), dict(), -4.0, 0.0, 0.0, None, None, None),
+        (dict(), dict(), 0.0, 0.0, 0.0, None, None, None),
+        (dict(), dict(), 3.0, 0.0, 0.0, None, None, None),
+        (dict(flow_max=50.0), dict(), -30.0, -30.0, -30.0, None, None, None),
+        (dict(), dict(slope_trim=5.0), 0.0, 0.0, 0.0, 0.9, 21.0, 1.0),
+        (dict(), dict(slope_trim=-5.0, bend=1.2), 0.0, 0.0, 0.0, None, 15.0, None),
+    ]
+    rows = []
+    for i in range(700):
+        if i < len(fixed):
+            tuning_kw, state_kw, measured, filtered, at, at_slope, at_balance, at_curvature = fixed[i]
+        else:
+            tuning_kw = dict(
+                room_target=rng.choice([21.0, 21.0, temperature(18.0, 24.0)]),
+                design_outdoor=rng.choice([-18.0, -18.0, -22.0, round(rng.uniform(-30.0, -5.0), 1)]),
+                curve_slope=rng.choice([0.9, 0.9, round(rng.uniform(0.3, 2.5), 2)]),
+                curve_curvature=rng.choice([0.8, 1.0, 1.3, round(rng.uniform(0.5, 1.5), 2)]),
+                slope_min=rng.choice([0.2, 0.2, 0.5]), slope_max=rng.choice([2.0, 2.0, 1.0]),
+                flow_min=rng.choice([20.0, 20.0, 25.0]), flow_max=rng.choice([65.0, 65.0, 50.0]),
+                outdoor_fall_lead=rng.choice([0.5, 0.5, 0.0, 1.0, round(rng.uniform(0.0, 1.0), 2)]),
+                outdoor_fall_limit=rng.choice([4.0, 4.0, 2.0, 0.0, round(rng.uniform(0.0, 8.0), 1)]),
+            )
+            state_kw = dict(
+                slope_trim=rng.choice([0.0, 0.0, round(rng.uniform(-1.5, 1.5), 3), 5.0, -5.0]),
+                balance_shift=rng.choice([0.0, 0.0, -6.0, round(rng.uniform(-14.0, 3.0), 2)]),
+                bend=maybe(round(rng.uniform(0.5, 1.5), 3), 0.6),
+            )
+            measured, filtered = maybe(temperature(-30.0, 20.0), 0.3), temperature(-30.0, 20.0)
+            at = temperature(-30.0, 25.0)
+            at_slope = maybe(round(rng.uniform(0.2, 2.0), 2), 0.5)
+            at_balance = maybe(temperature(10.0, 24.0), 0.5)
+            at_curvature = maybe(round(rng.uniform(0.5, 1.5), 2), 0.5)
+        tuning = m.Tuning(**tuning_kw)
+        made_loop = c.HeatingController(tuning, m.LearnedState(**state_kw))
+        curve_outdoor = made_loop._curve_outdoor(measured, filtered)
+        flow, slope = made_loop._curve(curve_outdoor)
+        rows.append([_stored({name: getattr(tuning, name) for name in curve_fields}),
+                     made_loop.state.slope_trim, made_loop.state.balance_shift, made_loop.state.bend,
+                     measured, filtered, curve_outdoor, slope, made_loop.balance(), made_loop.curvature(), flow,
+                     at, made_loop.curve_at(at), at_slope, at_balance, at_curvature,
+                     made_loop.curve_at(at, at_slope, at_balance, at_curvature)])
+    write(step, "curve.csv", ["tuning", "slope_trim", "balance_shift", "bend", "measured", "filtered", "curve_outdoor",
+                              "effective_slope", "balance", "curvature", "curve_flow", "at", "curve_at",
+                              "at_slope", "at_balance", "at_curvature", "curve_at_given"], rows)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -2021,12 +2258,14 @@ def main() -> int:
     burner(core, rng)
     model(core, rng)
     controller(core, rng)  # sist: stegen före får samma slumptal som förut
+    cycle_start(core, rng)
     for step, *modules in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
                            ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
                            ("06-skattarna", "estimators"), ("07-husmodellen", "thermal"),
                            ("08-prognosen", "forecast"), ("09-kurvanpassningen", "curvefit"),
                            ("10-brannaren", "burner"), ("11-modellen", "model", "parsing", "sunterm"),
-                           ("12-grunden", "controller", "texts")):
+                           ("12-grunden", "controller", "texts"),
+                           ("13-ute-inne-kurvan", "controller")):
         for module in modules:
             copy_source(heating, step, module)
     return 0

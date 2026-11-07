@@ -68,7 +68,7 @@ höjer du siffran, och då kommer nästa stegs tester med. Varje stegmapp har:
 | 10 | Brännaren: olja, pellets och reläerna | `burner.py` | tester klara |
 | 11 | Modellen: inställningar, lärt tillstånd, in- och utdata | `model.py` | tester klara |
 | 12 | Regulatorns grund: givarfusionen, hjälparna, texterna, konstruktorn | `controller.py`, `texts.py` | tester klara |
-| 13 | Regulatorn: ute, inne, klockorna och kurvan | `controller.py` | |
+| 13 | Regulatorn: ute, inne, klockorna och kurvan | `controller.py` | tester klara |
 | 14 | Regulatorn: deltat och radiatorvakten | `controller.py` | |
 | 15 | Regulatorn: läget och värmekällan | `controller.py` | |
 | 16 | Regulatorn: utrullningen | `controller.py` | |

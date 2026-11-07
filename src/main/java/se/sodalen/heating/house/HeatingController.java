@@ -265,4 +265,53 @@ public class HeatingController {
         }
         return burnerLead;
     }                   // seconds sätter (null låter bli), och svaret är det som gäller
+
+    // --- Steg 13: ute, inne, klockorna och kurvan ---------------------------------------------
+
+    Outdoors outdoor(ControlInputs inputs, double dt, ControlOutput out) {
+        return null;
+    }                   // ute på två tidsskalor; ingen givare: degraded "outdoor" och prognosens tal med flaggan "outdoor_forecast"; aldrig mätt: designOutdoor för båda; sommaren utan värde: den filtrerade
+
+    Indoors indoor(ControlInputs inputs, double dt, ControlOutput out) {
+        return null;
+    }                   // fuseIndoor till out.indoorReadings; några men inte alla bidrar: flaggan "indoor_partial"; inget tal: degraded "indoor" och (null, null) utan att röra filtren; annars båda filtren uppdaterade
+
+    void timers(ControlInputs inputs, double dt, ControlOutput out) {
+    }                   // klockorna i state: override/nödkörning, målbyte, sparläget (bara upp), solen (sunHeat och > learnSunlight), över mål på indoorSlow, sotning, brist/av/vakthund (upp; since_failsafe drar ner, aldrig under 0), utan tillopp (degraded "flow"), retur (degraded "return")
+
+    double curveOutdoor(Double measured, double filtered) {
+        return 0.0;
+    }                   // det ute kurvan läser: den filtrerade, och i en kallfront outdoorFallLead av vägen ner mot den mätta, högst outdoorFallLimit grader
+
+    CurvePoint curve(double outdoor) {
+        return null;
+    }                   // curveFlow(outdoor, effectiveSlope(), balance()) och lutningen den räknade med
+
+    public double curvature() {
+        return 0.0;
+    }                   // Model.effectiveCurvature(tuning, state)
+
+    public double effectiveSlope() {
+        return 0.0;
+    }                   // curveSlope + state.slopeTrim, hållen mellan slopeMin och slopeMax
+
+    public double balance() {
+        return 0.0;
+    }                   // roomTarget + state.balanceShift: utetemperaturen under vilken huset behöver värme
+
+    double curveFlow(double outdoor, double slope, double balance) {
+        return 0.0;
+    }                   // Curve.supply(outdoor, roomTarget, designOutdoor, slope, curvature(), balance)
+
+    double curveFlow(double outdoor, double slope, double balance, Double curvature) {
+        return 0.0;
+    }                   // samma med en given böj; null är curvature()
+
+    public double curveAt(double outdoor) {
+        return 0.0;
+    }                   // kurvan i bruk vid en utetemperatur, hållen till flowMin-flowMax: för att rita den
+
+    public double curveAt(double outdoor, Double slope, Double balance, Double curvature) {
+        return 0.0;
+    }                   // samma med given lutning, balans och böj; null är den i bruk
 }
