@@ -13,7 +13,7 @@ public record SensorReading(String key, Double temperature, String role, double 
     //   SensorReading(String key, Double temperature, String role, double weight)   // resten standard
     //   SensorReading(String key, Double temperature, String role, double weight, double offset, double stratification)
 
-    SensorReading(String key, Double temperature) {
+    public SensorReading(String key, Double temperature) {
         this(key, temperature, Model.ROLE_ROOM, 1.0, 0.0, 0.0, null, true, false);
     }
 

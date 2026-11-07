@@ -14,7 +14,7 @@ public record FusedSensor(String key, String role, Double raw, Double corrected,
     //                                                                                      // active true, featured false
 
 
-    FusedSensor(String key, String role, Double raw, Double corrected, double weight) {
+    public FusedSensor(String key, String role, Double raw, Double corrected, double weight) {
         this(key, role, raw, corrected, weight, false, 0.0, true, false);
     }
 

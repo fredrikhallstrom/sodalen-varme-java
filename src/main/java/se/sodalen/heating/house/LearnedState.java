@@ -143,9 +143,9 @@ public class LearnedState {
 
         if (!data.containsKey("balance_shift") && data.containsKey("curve_offset")) {
             state.balanceShift = Model.balanceFromOffset(asFloat(data.get("curve_offset"), 0.0), state, tuning);
-            state.retune(tuning);
 
         }
+        state.retune(tuning);
         return state;
     }// Pythons from_dict rad för rad, med migreringarna shortfall_cold, seconds_shortfall_cold och curve_offset; sist retune
 
