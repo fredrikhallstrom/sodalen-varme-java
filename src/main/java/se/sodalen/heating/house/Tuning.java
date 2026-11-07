@@ -13,6 +13,8 @@ public class Tuning {
     public double flowMin = 20.0;
     public double flowMax = 65.0;
     public double outdoorFilterSeconds = 3.0 * 3600.0;      // ett hus svarar på vädret över timmar: tre för ett lätt hus
+    public double outdoorFallLead = 0.5;          // hur stor del av vägen ner mot uppmätt ute kurvan läser i en kallfront
+    public double outdoorFallLimit = 4.0;  // mest så många grader, för en givare som gått sönder
 
     // --- Inomhusåterkopplingen ---
     public double indoorFilterSeconds = 20.0 * 60.0;
@@ -111,6 +113,9 @@ public class Tuning {
     public double heatSourceOffDelay = 1800.0;              // ett av-beslut måste hålla så länge innan det verkställs
     public double boilerMax = 95.0;                         // pannans egen vakt: här tappar brännaren strömmen
     public double boilerMaxRelease = 85.0;
+    public double coldBoilerBand = 10.0;          // pannskyddet: så många grader över frigränsen är ventilen fri
+    public double coldBoilerClearance = 2.0;      // ventilen får golvet från så här långt över larmgränsen och nedåt
+    public double coldBoilerFloor = 10.0;         // golvet i procent; 0 i band stänger av skyddet
 
     // --- Inre slingan: tillopp -> ventilläge ---
     public double cycleSeconds = 30.0;
@@ -151,6 +156,8 @@ public class Tuning {
     public double learnPositionMargin = 3.0;
     public double learnMinDemand = 0.15;
     public double learnSettleSeconds = 3600.0;
+    public double learnOverTarget = 0.3;                      // inget bakom grinden lär medan inne står så här över mål ...
+    public double learnOverTargetMaxSeconds = 18.0 * 3600.0;  // ... men högst så länge, för en kurva som verkligen är för hög måste höras
 
     // --- Kurvtabellen (points.py, curvefit.py) ---
     public boolean tableLearning = true;                    // om tabellen får styra kurvan; av är nödstoppet

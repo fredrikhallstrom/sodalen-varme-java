@@ -64,6 +64,7 @@ public class LearnedState {
     public double secondsSinceShortfall = 1e6;
     public double secondsSinceOff = 1e6;
     public double secondsSinceFailsafe = 1e6;
+    public double secondsOverTarget = 0.0;        // så länge inne stått mer än learnOverTarget över mål; noll när det är nere igen
     public String coldAfter = null;             // vilken av COLD_CAUSES huset ännu är under mål efter; null när det är tillbaka
     public double secondsCold = 0.0;
     public double secondsSinceTargetChange = 0.0;
@@ -89,6 +90,7 @@ public class LearnedState {
         state.deltaScale = Ewma.fromDict(asMapping(data.get("delta_scale")), tuning.deltaExpectedHorizonSeconds);
         state.deltaFilter = Ewma.fromDict(asMapping(data.get("delta_filter")), tuning.deltaFilterSeconds);
         state.deltaTrimHeld = asFloat(data.get("delta_trim_held"), 0.0);
+        state.secondsOverTarget = asFloat(data.get("seconds_over_target"), 0.0);
         state.secondsSettled = asFloat(data.get("seconds_settled"), 0.0);
         state.secondsUnsettled = asFloat(data.get("seconds_unsettled"), 0.0);
         state.lastFlowSetpoint = asOptionalFloat(data.get("last_flow_setpoint"));
@@ -219,6 +221,7 @@ public class LearnedState {
         result.put("seconds_since_shortfall", secondsSinceShortfall);
         result.put("seconds_since_off", secondsSinceOff);
         result.put("seconds_since_failsafe", secondsSinceFailsafe);
+        result.put("seconds_over_target", secondsOverTarget);
         result.put("cold_after", coldAfter);
         result.put("seconds_cold", secondsCold);
         result.put("seconds_since_target_change", secondsSinceTargetChange);

@@ -42,6 +42,7 @@ public class ControlOutput {
     public Boolean heatSource = null;           // null när ingen värmekälla är konfigurerad: inget att säga, inte "av"
     public boolean burnerForHotWater = false;
     public boolean boilerOverheated = false;
+    public Double coldBoilerCap = null;         // mest ventilen fick öppna den här cykeln för pannskyddet; null när pannan är varm nog
     public List<String> degraded = new ArrayList<>();        // givare som saknas eller är gamla
     public List<String> flags = new ArrayList<>();           // reglerbeslut värda att visa
     public Map<String, LearnerStatus> learning = new LinkedHashMap<>();   // varje lärares utlåtande, per LEARN_*-nyckel

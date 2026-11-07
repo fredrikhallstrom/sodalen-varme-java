@@ -26,6 +26,7 @@ public class ControlInputs {
     public List<Forecast> forecast = new ArrayList<>();
     public Double boiler = null;                // pannans egen temperatur, för ventilkartan
     public boolean boilerFailing = false;       // pannvakten säger att pannan sviktar: ventilens förstärkning lärs inte
+    public Double boilerLimit = null;           // brännarens larmgräns (alarm_below); null utan brännare, då gör pannskyddet inget
     public boolean sweeping = false;            // brännaren hålls av för sotaren: går före varmvattnet också
     public String emergency = Model.EMERGENCY_OFF;
     public Double sinceFailsafe = null;         // sekunder sedan Shellyns vakthund senast lämnade tillbaka ventilen
