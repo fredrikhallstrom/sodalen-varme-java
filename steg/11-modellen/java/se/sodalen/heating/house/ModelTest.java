@@ -99,34 +99,41 @@ class ModelTest {
 
     /** Python's field names of Tuning, in Python's order. */
     static final String[] PYTHON_FIELDS = {
-            "room_target", "design_outdoor", "curve_slope", "curve_curvature", "flow_min",
-            "flow_max", "outdoor_filter_seconds", "indoor_filter_seconds", "indoor_slow_filter_seconds", "room_gain",
-            "room_error_limit", "warm_stop_margin", "warm_stop_hysteresis", "solar_clamp", "override_lowering",
-            "learn_after_override_seconds", "learn_target_wait_max_seconds", "learn_target_warming", "learn_sunlight", "learn_after_sun_seconds",
-            "learn_after_sun_warm", "learn_after_sun_max_seconds", "learn_sun_term", "learn_sun_error", "sun_heat_seconds",
-            "sun_term_horizon_seconds", "learn_after_failsafe_warm", "learn_after_failsafe_max_seconds", "delta_design", "delta_gain",
-            "delta_lower_limit", "delta_raise_limit", "delta_cold_guard", "delta_expected_horizon_seconds", "delta_scale_min",
+            "room_target", "design_outdoor", "curve_slope", "curve_curvature", "flow_min", "flow_max",
+            "outdoor_filter_seconds", "outdoor_fall_lead", "outdoor_fall_limit", "indoor_filter_seconds",
+            "indoor_slow_filter_seconds", "room_gain", "room_error_limit", "warm_stop_margin", "warm_stop_hysteresis",
+            "solar_clamp", "override_lowering", "learn_after_override_seconds", "learn_target_wait_max_seconds",
+            "learn_target_warming", "learn_sunlight", "learn_after_sun_seconds", "learn_after_sun_warm",
+            "learn_after_sun_max_seconds", "learn_sun_term", "learn_sun_error", "sun_heat_seconds",
+            "sun_term_horizon_seconds", "learn_after_failsafe_warm", "learn_after_failsafe_max_seconds",
+            "learn_over_target", "learn_over_target_max_seconds", "delta_design", "delta_gain", "delta_lower_limit",
+            "delta_raise_limit", "delta_cold_guard", "delta_expected_horizon_seconds", "delta_scale_min",
             "delta_scale_max", "delta_enabled", "delta_min_demand", "delta_min_overtemp", "delta_fade",
-            "delta_settle_band", "delta_settle_seconds", "delta_filter_seconds", "delta_hold_max_seconds", "delta_warmup_seconds",
-            "starved_margin", "starved_horizon_seconds", "starved_share", "starved_min_hours", "failsafe_position",
-            "resume_position_max", "resume_hold_seconds", "valve_feedforward_gain", "valve_feedforward_step", "failsafe_after_seconds",
-            "emergency_position", "emergency_flow", "reseed_after_seconds", "sensor_max_age_seconds", "coast_enabled",
-            "coast_horizon_hours", "coast_confidence", "coast_learning_band", "coast_comfort_band", "coast_bridge_only",
-            "coast_learning_hold_seconds", "coast_learning_hold_max_seconds", "coast_learning_cell_hours", "coast_recovery_gain", "coast_unknown_reach",
-            "coast_min_hours", "shunt_lead_seconds", "coast_hysteresis_seconds", "thermal_sample_seconds", "thermal_horizon_seconds",
-            "forecast_horizon_seconds", "summer_outdoor", "summer_hysteresis", "summer_filter_seconds", "heat_source_off_in_summer",
-            "heat_source_off_when_idle", "heat_source_off_when_disabled", "heat_source_off_delay", "boiler_max", "boiler_max_release",
-            "cycle_seconds", "pid_kp", "pid_ti", "pid_td", "pid_deadband",
-            "min_position_step", "position_drift_limit", "position_drift_seconds", "gain_reference", "gain_scale_min",
-            "gain_scale_max", "valve_map_gain", "kp_rise_seconds", "gain_horizon_seconds", "gain_min_variance",
-            "learn_enabled", "learn_horizon_seconds", "learn_level_horizon_seconds", "learn_offset_rate", "learn_slope_rate",
-            "learn_saturated_seconds", "learn_warm_trap_seconds", "learn_warm_trap_decay", "learn_saturated_slope_rate", "learn_slope_pull",
-            "balance_shift_min", "balance_shift_max", "learn_balance_scale", "learn_slope_scale", "slope_min",
-            "slope_max", "learn_min_variance", "learn_max_flow_error", "learn_position_margin", "learn_min_demand",
-            "learn_settle_seconds", "table_learning", "table_max_green_gap", "curve_bend_limit", "table_half_life_days",
-            "table_steady_seconds", "table_indoor_band", "table_indoor_trend", "table_outdoor_trend", "table_red_hours",
-            "table_green_hours", "table_green_spread", "table_number_per_day", "table_balance_per_day", "table_bend_per_day",
-            "table_balance_trust", "table_balance_from_house", "night_start_hour", "night_end_hour", "table_fit_seconds",
+            "delta_settle_band", "delta_settle_seconds", "delta_filter_seconds", "delta_hold_max_seconds",
+            "delta_warmup_seconds", "starved_margin", "starved_horizon_seconds", "starved_share", "starved_min_hours",
+            "failsafe_position", "resume_position_max", "resume_hold_seconds", "valve_feedforward_gain",
+            "valve_feedforward_step", "failsafe_after_seconds", "emergency_position", "emergency_flow",
+            "reseed_after_seconds", "sensor_max_age_seconds", "coast_enabled", "coast_horizon_hours",
+            "coast_confidence", "coast_learning_band", "coast_comfort_band", "coast_bridge_only",
+            "coast_learning_hold_seconds", "coast_learning_hold_max_seconds", "coast_learning_cell_hours",
+            "coast_recovery_gain", "coast_unknown_reach", "coast_min_hours", "shunt_lead_seconds",
+            "coast_hysteresis_seconds", "thermal_sample_seconds", "thermal_horizon_seconds",
+            "forecast_horizon_seconds", "summer_outdoor", "summer_hysteresis", "summer_filter_seconds",
+            "heat_source_off_in_summer", "heat_source_off_when_idle", "heat_source_off_when_disabled",
+            "heat_source_off_delay", "boiler_max", "boiler_max_release", "cold_boiler_band", "cold_boiler_clearance",
+            "cold_boiler_floor", "cycle_seconds", "pid_kp", "pid_ti", "pid_td", "pid_deadband", "min_position_step",
+            "position_drift_limit", "position_drift_seconds", "gain_reference", "gain_scale_min", "gain_scale_max",
+            "valve_map_gain", "kp_rise_seconds", "gain_horizon_seconds", "gain_min_variance", "learn_enabled",
+            "learn_horizon_seconds", "learn_level_horizon_seconds", "learn_offset_rate", "learn_slope_rate",
+            "learn_saturated_seconds", "learn_warm_trap_seconds", "learn_warm_trap_decay",
+            "learn_saturated_slope_rate", "learn_slope_pull", "balance_shift_min", "balance_shift_max",
+            "learn_balance_scale", "learn_slope_scale", "slope_min", "slope_max", "learn_min_variance",
+            "learn_max_flow_error", "learn_position_margin", "learn_min_demand", "learn_settle_seconds",
+            "table_learning", "table_max_green_gap", "curve_bend_limit", "table_half_life_days",
+            "table_steady_seconds", "table_indoor_band", "table_indoor_trend", "table_outdoor_trend",
+            "table_red_hours", "table_green_hours", "table_green_spread", "table_number_per_day",
+            "table_balance_per_day", "table_bend_per_day", "table_balance_trust", "table_balance_from_house",
+            "night_start_hour", "night_end_hour", "table_fit_seconds"
     };
 
     /** Python's defaults, field by field. */
@@ -603,12 +610,12 @@ class ModelTest {
             }
         }
 
-        /** 140 public fields with Python's names in camelCase, 11 of them boolean and the rest double. */
+        /** 147 public fields with Python's names in camelCase, 11 of them boolean and the rest double. */
         @Test
         void theFieldsArePythonsInCamelCase() {
             List<Field> fields = tuningFields();
-            assertEquals(140, fields.size(), "how many");
-            assertEquals(140, PYTHON_FIELDS.length);
+            assertEquals(147, fields.size(), "how many");
+            assertEquals(147, PYTHON_FIELDS.length);
             Set<String> names = new LinkedHashSet<>();
             for (Field field : fields) {
                 names.add(field.getName());
@@ -973,7 +980,7 @@ class ModelTest {
         }
 
         @Test
-        void asDictHasPythonsFiftyFourKeysInOrder() {
+        void asDictHasPythonsFiftyFiveKeysInOrder() {
             List<String> keys = List.of("balance_shift", "slope_trim", "bend", "process_gain", "delta_scale",
                     "delta_filter", "delta_trim_held", "seconds_settled", "seconds_unsettled", "last_flow_setpoint",
                     "seconds_since_stop", "starved", "outdoor", "outdoor_summer", "indoor", "indoor_slow", "sun_heat",
@@ -982,10 +989,11 @@ class ModelTest {
                     "seconds_learning_hold", "learning_hold_cell", "learning_hold_base", "seconds_stopped",
                     "seconds_without_flow", "seconds_since_override", "seconds_since_coast", "seconds_since_sun",
                     "seconds_since_sweep", "seconds_since_shortfall", "seconds_since_off", "seconds_since_failsafe",
+                    "seconds_over_target",
                     "cold_after", "seconds_cold", "seconds_since_target_change", "warm_stopped", "summer_stopped",
                     "coasting", "recovering", "boiler_overheated", "needs_reseed", "resume_position",
                     "resume_hold_left", "last_feedforward", "last_kp");
-            assertEquals(54, keys.size());
+            assertEquals(55, keys.size());
             assertEquals(keys, List.copyOf(new LearnedState().asDict().keySet()));
         }
 
