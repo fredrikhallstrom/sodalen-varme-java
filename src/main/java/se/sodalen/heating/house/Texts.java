@@ -41,6 +41,14 @@ public final class Texts {
     }
 
     public static String emergencyReason(String kind, double position, double flow) {
-        return null;
+
+        if (Model.EMERGENCY_VALVE.equals(kind)) {
+            return String.format("Nödkörning - fast ventilläge %.0f %%", Math.rint(position));
+        }
+        if (Model.EMERGENCY_FLOW.equals(kind)) {
+            return String.format("Nödkörning - fast tillopp %.0f °C", Math.rint(flow));
+        }
+        return MODE_REASONS.get(Model.MODE_EMERGENCY);
+
     }                   // statusraden vid handkörning, med talet: "Nödkörning - fast ventilläge 65 %" / "... fast tillopp 35 °C"; annars MODE_REASONS för nödkörning
 }

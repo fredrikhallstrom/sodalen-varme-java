@@ -1,14 +1,18 @@
 package se.sodalen.heating.house;
 
+import se.sodalen.heating.curve.CurveFit;
+import se.sodalen.heating.curve.PointTable;
+import se.sodalen.heating.forecast.Ensemble;
+import se.sodalen.heating.valve.ValveMap;
+
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import se.sodalen.heating.curve.CurveFit;
-import se.sodalen.heating.curve.PointTable;
-import se.sodalen.heating.forecast.Ensemble;
-import se.sodalen.heating.valve.ValveMap;
+import static se.sodalen.heating.house.Model.ROLE_SOLAR;
+import static se.sodalen.heating.house.Thermal.solarIndex;
 
 // Den yttre slingan: vilken tilloppstemperatur huset vill ha just nu (controller.py). Kaskadreglering,
 // som en shuntventil vill ha: den långsamma slingan gör väder och inomhustemperatur till ett
@@ -63,47 +67,202 @@ public class HeatingController {
     double burnerLead = 1800.0;                     // Pythons _burner_lead, med getattr:s standardvärde
 
     public HeatingController(Tuning tuning) {
+        this(tuning, null, null, null, null, null);
     }                   // Pythons standardvärden: state, house, ensemble, valve_map och points None
 
     public HeatingController(Tuning tuning, LearnedState state, HouseModel house, Ensemble ensemble,
                              ValveMap valveMap, PointTable points) {
+        this.tuning = tuning;
+        if (state == null) {
+            state = new LearnedState();
+            state.processGain = tuning.gainReference;
+        }
+        this.state = state;
+        if (house == null) {
+            house = new HouseModel();
+        }
+        this.house = house;
+        if (ensemble == null) {
+            ensemble = new Ensemble();
+        }
+        this.ensemble = ensemble;
+        if (valveMap == null) {
+            valveMap = new ValveMap();
+        }
+        this.valveMap = valveMap;
+        if (points == null) {
+            points = new PointTable();
+        }
+        this.points = points;
+
+        this.state.retune(tuning);
+        this.retuneLearners();
     }                   // null ger ett nytt standardobjekt (en ny LearnedState med tuningens gainReference); sist state.retune(tuning) och retuneLearners()
 
-    public void applyTuning(Tuning tuning) {
-    }                   // ny tuning utan att tappa det lärda: slopeTrim nollas bara när curveSlope flyttats mer än 1e-9; sinceFit = oändligt; retune som i konstruktorn
-
-    void retuneLearners() {
-    }                   // house.retune(thermalHorizonSeconds), house.setDesign(designSpan(), deltaDesign, thermalSampleSeconds), ensemble.retune(forecastHorizonSeconds)
-
-    public double burnerLeadSeconds() {
-        return 0.0;
-    }                   // hur långt innan värmen behövs brännaren måste få veta; 1800 tills någon sagt annat
-
-    public double burnerLeadSeconds(Double seconds) {
-        return 0.0;
-    }                   // seconds sätter (null låter bli), och svaret är det som gäller
-
     static double deadbanded(double error, double deadband) {
+
+        if (deadband <= 0.0) {
+            return error;
+        }
+
+        if (error > deadband) {
+            return error - deadband;
+        }
+
+        if (error < -deadband) {
+            return error + deadband;
+        }
+
         return 0.0;
     }                   // felet som PID:en ser det: ingen zon (<= 0) → felet; utanför zonen minus zonen; i och på kanten 0
 
     public static double sunlightNow(ControlInputs inputs) {
-        return 0.0;
+
+        Double light = inputs.sunlight;
+
+        if (light != null && Double.isFinite(light)) {
+            return Math.max(0.0, light);
+        }
+
+        return Thermal.SUNLIGHT_PER_INDEX * solarIndex(inputs.sunElevation, inputs.cloud);
     }                   // solen på väggarna nu, kW/m2: inputs.sunlight om det är ett ändligt tal (aldrig under 0), annars SUNLIGHT_PER_INDEX * solarIndex(sunElevation, cloud)
 
     public static IndoorFusion fuseIndoor(List<SensorReading> readings, Tuning tuning, Double flow) {
-        return null;
+
+        List<FusedSensor> details = new ArrayList<>();
+
+        for (SensorReading reading : readings) {
+            double weight = Math.max(0.0, reading.weight());
+            Double value = null;
+            if (reading.temperature() != null) {
+                value = reading.temperature() + reading.offset();
+                if (flow != null) {
+                    value -= reading.stratification() * Math.max(0.0, flow - tuning.roomTarget);
+                }
+            }
+            details.add(
+                    new FusedSensor(
+                            reading.key(),
+                            reading.role(),
+                            reading.temperature(),
+                            value,
+                            weight,
+                            false,
+                            reading.offset(),
+                            reading.active(),
+                            reading.featured()
+                    )
+            );
+        }
+
+        List<FusedSensor> contributing = new ArrayList<>();
+        for (FusedSensor item : details) {
+            if (item.contributed()) {
+                contributing.add(item);
+            }
+        }
+
+        if (contributing.isEmpty()) {
+            return new IndoorFusion(null, details);
+        }
+
+        List<FusedSensor> others = new ArrayList<>();
+        for (FusedSensor item : contributing) {
+            if (!item.role().equals(ROLE_SOLAR)) {
+                others.add(item);
+            }
+        }
+
+        List<FusedSensor> pool = others.isEmpty() ? contributing : others;
+
+        double sumWeight = 0.0;
+        double sumCorrected = 0.0;
+        for (FusedSensor item : pool) {
+            sumWeight += item.weight();
+            sumCorrected += item.corrected() * item.weight();
+        }
+        double reference = sumCorrected / sumWeight;
+
+        double total = 0.0;
+        double totalWeight = 0.0;
+
+        for (int i = 0; i < details.size(); i++) {
+            FusedSensor item = details.get(i);
+            if (!item.contributed()) {
+                continue;
+            }
+            double value = item.corrected();
+            if (item.role().equals(ROLE_SOLAR) && !others.isEmpty()) {
+                double capped = Math.min(value, reference + tuning.solarClamp);
+                if (capped < value) {
+                    details.set(i, new FusedSensor(
+                            item.key(),
+                            item.role(),
+                            item.raw(),
+                            item.corrected(),
+                            item.weight(),
+                            true,
+                            item.offset(),
+                            item.active(),
+                            item.featured()
+                            )
+                    );
+                }
+                value = capped;
+            }
+            total += value * item.weight();
+            totalWeight += item.weight();
+        }
+
+        return new IndoorFusion(total / totalWeight, details);
     }                   // inomhusgivarna till ett tal: offset och skiktning per avläsning, solrummet hållet ovanifrån mot resten av huset; en FusedSensor per avläsning
 
     static double toward(double value, double goal, double step) {
-        return 0.0;
+        return value + clamp(goal - value, -step, step);
     }                   // value flyttat mot goal med högst step
 
     static double risingSlowly(Double last, double wanted, double dt, double seconds) {
-        return 0.0;
+
+        if (last == null || wanted <= last || seconds <= 0.0) {
+            return wanted;
+        }
+        return last + (wanted - last) * (1.0 - Math.exp(-Math.max(0.0, dt / seconds)));
     }                   // wanted om det inte är mer än last; annars last mot wanted med tidskonstanten seconds. Inget last, eller ingen tidskonstant: wanted
 
     static double clamp(double value, double low, double high) {
-        return 0.0;
+        return Math.min(high, Math.max(low, value));
     }                   // min(high, max(low, value)); inte Math.clamp, som kastar när low > high
+
+    public void applyTuning(Tuning tuning) {
+        if (Math.abs(tuning.curveSlope - this.tuning.curveSlope) > 1e-9) {
+            state.slopeTrim = 0.0;
+        }
+
+        sinceFit = Double.POSITIVE_INFINITY;
+        this.tuning = tuning;
+        state.retune(tuning);
+        retuneLearners();
+    }                   // ny tuning utan att tappa det lärda: slopeTrim nollas bara när curveSlope flyttats mer än 1e-9; sinceFit = oändligt; retune som i konstruktorn
+
+    void retuneLearners() {
+
+        house.retune(tuning.thermalHorizonSeconds);
+        house.setDesign(
+                tuning.designSpan(),
+                tuning.deltaDesign,
+                tuning.thermalSampleSeconds
+        );
+        ensemble.retune(tuning.forecastHorizonSeconds);
+    }                   // house.retune(thermalHorizonSeconds), house.setDesign(designSpan(), deltaDesign, thermalSampleSeconds), ensemble.retune(forecastHorizonSeconds)
+
+    public double burnerLeadSeconds() {
+        return burnerLead;
+    }                   // hur långt innan värmen behövs brännaren måste få veta; 1800 tills någon sagt annat
+
+    public double burnerLeadSeconds(Double seconds) {
+        if (seconds != null) {
+            burnerLead = seconds;
+        }
+        return burnerLead;
+    }                   // seconds sätter (null låter bli), och svaret är det som gäller
 }
