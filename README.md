@@ -16,6 +16,12 @@ som ett sätt att lära mig Java på riktigt: klass för klass, med test först.
 - **Stack:** Java 25, Gradle 9 (Groovy DSL, versionskatalog), JUnit 6,
   records, `@Nested`-tester, `@Tag` för att skilja snabba tester från de
   tusentals Pythonfallen.
+- **`AGENTS.md` och `CLAUDE.md`** är instruktionen till AI-verktyget: vem som
+  skriver vad, att det aldrig rör `src/main`, hur stegens tester och facit tas
+  fram och att de kontrolleras mot en egen referenslösning. `CLAUDE.md`
+  importerar bara `AGENTS.md`, så det finns en text och inte två. Commits
+  som AI:n gjort har raden `Co-Authored-By: Claude`, så historiken visar
+  samma arbetsdelning commit för commit.
 
 Resten av den här filen är arbetsinstruktionen jag följer.
 
