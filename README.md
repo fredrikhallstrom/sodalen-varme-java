@@ -1,5 +1,24 @@
 # Sodalen värme i Java
 
+## Om projektet
+
+Hemma styrs värmen av en självlärande reglering som jag har byggt i Python:
+en shuntventil på en ESBE-motor och en Shelly 2PM, en värmekurva som lär sig
+huset, en husmodell som ser kallfronter och sol, och en Home
+Assistant-integration som kör alltihop. Här skriver jag om kärnan i **Java 25**,
+som ett sätt att lära mig Java på riktigt: klass för klass, med test först.
+
+- **Koden under `src/main` är min.** Jag skriver den för hand, steg för steg,
+  mot tester som finns innan koden gör det.
+- **Testerna är skrivna med AI** (Claude), översatta från Pythonversionens
+  tester och kontrollerade mot facit som Pythonkoden räknat fram. Över 24 000
+  testfall jämför Java och Python tal för tal.
+- **Stack:** Java 25, Gradle 9 (Groovy DSL, versionskatalog), JUnit 6,
+  records, `@Nested`-tester, `@Tag` för att skilja snabba tester från de
+  tusentals Pythonfallen.
+
+Resten av den här filen är arbetsinstruktionen jag följer.
+
 Värmekärnan från Sodalens värmereglering (`heating/` i sodalen-router-system),
 skriven om i Java 25, ett steg i taget. Pythonversionen styr huset i dag. Den
 här ska till slut räkna exakt likadant och köras bredvid i **skuggläge**: den
