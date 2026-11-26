@@ -3,18 +3,15 @@ package se.sodalen.heating.house;
 import se.sodalen.heating.curve.Curve;
 import se.sodalen.heating.curve.CurveFit;
 import se.sodalen.heating.curve.PointTable;
+import se.sodalen.heating.estimate.DutyWatch;
+import se.sodalen.heating.estimate.Ewma;
 import se.sodalen.heating.forecast.Ensemble;
 import se.sodalen.heating.forecast.Forecasts;
 import se.sodalen.heating.valve.ValveMap;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-import static se.sodalen.heating.house.Model.ROLE_SOLAR;
-import static se.sodalen.heating.house.Model.effectiveCurvature;
+import static se.sodalen.heating.house.Model.*;
 import static se.sodalen.heating.house.Thermal.solarIndex;
 
 // Den yttre slingan: vilken tilloppstemperatur huset vill ha just nu (controller.py). Kaskadreglering,
@@ -68,6 +65,7 @@ public class HeatingController {
     double sinceFit = Double.POSITIVE_INFINITY;     // Pythons _since_fit: sekunder sedan tabellen anpassades
     boolean starved = false;                        // Pythons _starved: om radiatorvarningen är uppe
     double burnerLead = 1800.0;                     // Pythons _burner_lead, med getattr:s standardvärde
+    ControlOutput out = null;
 
     public HeatingController(Tuning tuning) {
         this(tuning, null, null, null, null, null);
@@ -199,15 +197,15 @@ public class HeatingController {
                 double capped = Math.min(value, reference + tuning.solarClamp);
                 if (capped < value) {
                     details.set(i, new FusedSensor(
-                            item.key(),
-                            item.role(),
-                            item.raw(),
-                            item.corrected(),
-                            item.weight(),
-                            true,
-                            item.offset(),
-                            item.active(),
-                            item.featured()
+                                    item.key(),
+                                    item.role(),
+                                    item.raw(),
+                                    item.corrected(),
+                                    item.weight(),
+                                    true,
+                                    item.offset(),
+                                    item.active(),
+                                    item.featured()
                             )
                     );
                 }
@@ -445,32 +443,168 @@ public class HeatingController {
     // --- Steg 14: deltat och radiatorvakten ------------------------------------------------------
 
     Delta delta(ControlInputs inputs, Double indoor, double demand, ControlOutput out) {
-        return null;
+        return delta(inputs, indoor, demand, out, 0.0, null, null);
     }                   // Pythons _delta med standardvärdena: dt 0.0, baseFlow null, room null
 
     Delta delta(ControlInputs inputs, Double indoor, double demand, ControlOutput out,
                 double dt, Double baseFlow, Double room) {
-        return null;
+
+        if (inputs.flow == null || inputs.ret == null) {
+            out.deltaQuiet = DELTA_QUIET_SENSOR;
+            forgetDelta();
+            return new Delta(null, null, 0.0);
+        }
+
+        double delta = inputs.flow - inputs.ret;
+
+        if (!tuning.deltaEnabled) {
+            out.deltaQuiet = DELTA_QUIET_OFF;
+            forgetDelta();
+            return new Delta(delta, null, 0.0);
+        }
+
+        if (demand < tuning.deltaMinDemand) {
+            out.deltaQuiet = DELTA_QUIET_DEMAND;
+            forgetDelta();
+            return new Delta(delta, null, 0.0);
+        }
+
+        if (room == null) {
+            room = indoor;
+        }
+        double weight = deltaWeight(
+                baseFlow == null ? inputs.flow : baseFlow,
+                room
+        );
+        out.deltaWeight = weight;
+        if (weight <= 0.0) {
+            out.deltaQuiet = DELTA_QUIET_LUKEWARM;
+            forgetDelta();
+            out.deltaReadableFrom = (
+                    (room == null ? tuning.roomTarget : room) + tuning.deltaMinOvertemp
+            );
+            return new Delta(delta, null, 0.0);
+        }
+
+        Double scale = state.deltaScale.value();
+
+        double expected = Math.max(
+                1.0, tuning.deltaDesign * Math.min(1.2, demand) * (scale == null ? 1.0 : scale)
+        );
+
+        double trim = deltaTrim(inputs, delta, expected, weight, dt, out);
+
+        if (indoor != null) {
+            if (trim < 0.0 && indoor < tuning.roomTarget - tuning.deltaColdGuard) {
+                trim = 0.0;
+                out.flags.add("delta_held_cold");
+            } else if (trim > 0.0 && indoor > tuning.roomTarget + tuning.deltaColdGuard) {
+                trim = 0.0;
+            }
+        }
+
+        return new Delta(delta, expected, trim);
+
     }                   // korrigeringen ur hur mycket värme radiatorerna tar; tyst (DELTA_QUIET_*) utan givare, avstängd, lågt behov eller ljummet tillopp; inneslingan har sista ordet åt båda håll
 
     void said(String key, boolean learning, String why, Double value) {
+
+        if (out != null) {
+            out.learning.put(key, new LearnerStatus(learning, why, value));
+        }
     }                   // en lärares utlåtande den här cykeln i out.learning; utan cykel (out == null) sägs ingenting
 
     void forgetDelta() {
+
+        state.deltaFilter = new Ewma(state.deltaFilter.seconds(), null);
+        state.deltaTrimHeld = 0.0;
+        state.secondsSettled = 0.0;
+        state.secondsUnsettled = 0.0;
+
     }                   // deltafiltret tomt, den hållna korrigeringen 0, settled och unsettled 0
 
     double deltaTrim(ControlInputs inputs, double delta, double expected, double weight, double dt, ControlOutput out) {
-        return 0.0;
+
+        if (state.secondsSinceStop < tuning.deltaWarmupSeconds) {
+            state.deltaFilter = new Ewma(tuning.deltaFilterSeconds, null);
+            state.deltaTrimHeld = 0.0;
+            state.secondsSettled = 0.0;
+            out.deltaWarmingLeft = tuning.deltaWarmupSeconds - state.secondsSinceStop;
+            out.flags.add("delta_warming");
+            return 0.0;
+        }
+
+        Double setpoint = state.lastFlowSetpoint;
+
+        if (setpoint != null && Math.abs(inputs.flow - setpoint) <= tuning.deltaSettleBand) {
+            state.secondsSettled += dt;
+        } else {
+            state.secondsSettled = 0.0;
+        }
+
+        if (state.secondsSettled < tuning.deltaSettleSeconds) {
+            state.secondsUnsettled += dt;
+            if (state.secondsUnsettled >= tuning.deltaHoldMaxSeconds) {
+                state.deltaFilter = new Ewma(tuning.deltaFilterSeconds, null);
+                state.deltaTrimHeld = 0.0;
+                return 0.0;
+            }
+            out.flags.add("delta_held_moving");
+            out.deltaRead = state.deltaFilter.value();
+            return state.deltaTrimHeld;
+        }
+
+        state.secondsUnsettled = 0.0;
+        double read = state.deltaFilter.update(delta, dt);
+        out.deltaRead = read;
+        state.deltaTrimHeld = weight * clamp(
+                -tuning.deltaGain * (expected - read),
+                -tuning.deltaLowerLimit,
+                tuning.deltaRaiseLimit
+        );
+
+        return state.deltaTrimHeld;
     }                   // korrigeringen, dömd bara när tilloppet står stilla; uppvärmning efter stopp: 0 och "delta_warming"; på väg: den hållna, i högst deltaHoldMaxSeconds
 
     void watchRadiators(String mode, Double indoor, Double delta, Double expected, double dt, ControlOutput out) {
+        watchRadiators(mode, indoor, delta, expected, dt, out, false);
     }                   // Pythons _watch_radiators med sweeping False
 
     void watchRadiators(String mode, Double indoor, Double delta, Double expected, double dt, ControlOutput out,
                         boolean sweeping) {
+        boolean judged = MODE_HEATING.equals(mode)
+                && !sweeping
+                && state.secondsSinceSweep >= tuning.learnAfterOverrideSeconds
+                && out.deltaWeight >= 1.0
+                && indoor != null
+                && delta != null
+                && expected != null;
+
+        Boolean held = null;
+
+        if (judged) {
+            held = expected - delta >= tuning.starvedMargin * expected
+                    && indoor < tuning.roomTarget - tuning.deltaColdGuard;
+        }
+
+        state.starved.update(held, dt);
+        double line = tuning.starvedShare * (starved ? STARVED_RELEASE : 1.0);
+        starved = state.starved.hours() >= tuning.starvedMinHours
+                && (state.starved.share() == null ? 0.0 : state.starved.share()) >= line;
+        out.radiatorsStarved = starved;
+        if (out.radiatorsStarved) {
+            out.flags.add("radiators_starved");
+        }
+
+
     }                   // radiatorer som tar för lite värme ur ett kallt hus; döms bara i värmeläge, utan sotning, med fullt deltavikt; varningen upp vid starvedShare, ned först under STARVED_RELEASE av den
 
     double deltaWeight(double supply, Double room) {
-        return 0.0;
+        double over = supply - (room == null ? tuning.roomTarget : room);
+        if (tuning.deltaFade <= 0.0) {
+            return over >= tuning.deltaMinOvertemp ? 1.0 : 0.0;
+        }
+
+        return clamp((over - tuning.deltaMinOvertemp) / tuning.deltaFade, 0.0, 1.0);
     }                   // hur mycket deltat är värt, 0 till 1, ur tilloppet över rummet: en ramp över deltaFade från deltaMinOvertemp; deltaFade <= 0 är en brytare
 }
