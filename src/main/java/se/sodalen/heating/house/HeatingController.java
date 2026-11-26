@@ -321,56 +321,56 @@ public class HeatingController {
 
     void timers(ControlInputs inputs, double dt, ControlOutput out) {
 
-        LearnedState state = this.state;
+        LearnedState stateValue = this.state;
 
         if (inputs.overrideActive || Model.EMERGENCY_KINDS.contains(inputs.emergency)) {
-            state.secondsSinceOverride = 0.0;
+            stateValue.secondsSinceOverride = 0.0;
         } else {
-            state.secondsSinceOverride += dt;
+            stateValue.secondsSinceOverride += dt;
         }
 
         if (inputs.targetChanged) {
-            state.secondsSinceTargetChange = 0.0;
+            stateValue.secondsSinceTargetChange = 0.0;
         } else {
-            state.secondsSinceTargetChange += dt;
+            stateValue.secondsSinceTargetChange += dt;
         }
 
-        state.secondsSinceCoast += dt;
+        stateValue.secondsSinceCoast += dt;
 
         double light = sunlightNow(inputs);
-        state.sunHeat.update(light, dt);
+        stateValue.sunHeat.update(light, dt);
         if (light > tuning.learnSunlight) {
-            state.secondsSinceSun = 0.0;
+            stateValue.secondsSinceSun = 0.0;
         } else {
-            state.secondsSinceSun += dt;
+            stateValue.secondsSinceSun += dt;
         }
 
-        Double slow = state.indoorSlow.value();
+        Double slow = stateValue.indoorSlow.value();
         if (slow != null && slow > tuning.roomTarget + tuning.learnOverTarget) {
-            state.secondsOverTarget += dt;
+            stateValue.secondsOverTarget += dt;
         } else {
-            state.secondsOverTarget = 0.0;
+            stateValue.secondsOverTarget = 0.0;
         }
 
         if (inputs.sweeping) {
-            state.secondsSinceSweep = 0.0;
+            stateValue.secondsSinceSweep = 0.0;
         } else {
-            state.secondsSinceSweep += dt;
+            stateValue.secondsSinceSweep += dt;
         }
 
-        state.secondsSinceShortfall += dt;
-        state.secondsSinceOff += dt;
-        state.secondsSinceFailsafe += dt;
+        stateValue.secondsSinceShortfall += dt;
+        stateValue.secondsSinceOff += dt;
+        stateValue.secondsSinceFailsafe += dt;
 
         if (inputs.sinceFailsafe != null) {
-            state.secondsSinceFailsafe = Math.clamp(inputs.sinceFailsafe, 0.0, state.secondsSinceFailsafe);
+            stateValue.secondsSinceFailsafe = Math.clamp(inputs.sinceFailsafe, 0.0, stateValue.secondsSinceFailsafe);
         }
 
         if (inputs.flow == null) {
-            state.secondsWithoutFlow += dt;
+            stateValue.secondsWithoutFlow += dt;
             out.degraded.add("flow");
         } else {
-            state.secondsWithoutFlow = 0.0;
+            stateValue.secondsWithoutFlow = 0.0;
         }
 
         if (inputs.ret == null) {
