@@ -23,6 +23,7 @@ public class ControlOutput {
     public Double indoorFused = null;
     public Double indoorSlow = null;            // samma sak på tvåtimmarsfiltret, det inläraren läser
     public Double outdoorFiltered = null;
+    public Double curveOutdoor = null;
     public Double outdoorSummer = null;
     public Double delta = null;
     public Double deltaExpected = null;

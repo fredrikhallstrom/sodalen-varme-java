@@ -1,8 +1,10 @@
 package se.sodalen.heating.house;
 
+import se.sodalen.heating.curve.Curve;
 import se.sodalen.heating.curve.CurveFit;
 import se.sodalen.heating.curve.PointTable;
 import se.sodalen.heating.forecast.Ensemble;
+import se.sodalen.heating.forecast.Forecasts;
 import se.sodalen.heating.valve.ValveMap;
 
 import java.util.ArrayList;
@@ -12,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static se.sodalen.heating.house.Model.ROLE_SOLAR;
+import static se.sodalen.heating.house.Model.effectiveCurvature;
 import static se.sodalen.heating.house.Thermal.solarIndex;
 
 // Den yttre slingan: vilken tilloppstemperatur huset vill ha just nu (controller.py). Kaskadreglering,
@@ -269,49 +272,173 @@ public class HeatingController {
     // --- Steg 13: ute, inne, klockorna och kurvan ---------------------------------------------
 
     Outdoors outdoor(ControlInputs inputs, double dt, ControlOutput out) {
-        return null;
+
+        Double outdoor = inputs.outdoor;
+        if (outdoor == null) {
+            out.degraded.add("outdoor");
+            outdoor = Forecasts.outdoorFromForecast(inputs.forecast);
+
+            if (outdoor != null) {
+                out.flags.add("outdoor_forecast");
+            }
+        }
+        Double filtered = state.outdoor.update(outdoor, dt);
+        Double seasonal = state.outdoorSummer.update(outdoor, dt);
+
+        if (filtered == null) {
+            return new Outdoors(tuning.designOutdoor, tuning.designOutdoor);
+        }
+
+        return new Outdoors(filtered, seasonal != null ? seasonal : filtered);
     }                   // ute på två tidsskalor; ingen givare: degraded "outdoor" och prognosens tal med flaggan "outdoor_forecast"; aldrig mätt: designOutdoor för båda; sommaren utan värde: den filtrerade
 
     Indoors indoor(ControlInputs inputs, double dt, ControlOutput out) {
-        return null;
+
+        IndoorFusion indoorFusion = fuseIndoor(inputs.indoor, tuning, inputs.flow);
+        out.indoorReadings = indoorFusion.details();
+
+        double contributing = 0.0;
+        for (FusedSensor item : indoorFusion.details()) {
+            if (item.contributed()) {
+                contributing += 1;
+            }
+        }
+
+        if (contributing != 0 && contributing < indoorFusion.details().size()) {
+            out.flags.add("indoor_partial");
+        }
+
+        if (indoorFusion.temperature() == null) {
+            out.degraded.add("indoor");
+            return new Indoors(null, null);
+        }
+
+
+        return new Indoors(
+                state.indoor.update(indoorFusion.temperature(), dt),
+                state.indoorSlow.update(indoorFusion.temperature(), dt));
     }                   // fuseIndoor till out.indoorReadings; några men inte alla bidrar: flaggan "indoor_partial"; inget tal: degraded "indoor" och (null, null) utan att röra filtren; annars båda filtren uppdaterade
 
     void timers(ControlInputs inputs, double dt, ControlOutput out) {
+
+        LearnedState state = this.state;
+
+        if (inputs.overrideActive || Model.EMERGENCY_KINDS.contains(inputs.emergency)) {
+            state.secondsSinceOverride = 0.0;
+        } else {
+            state.secondsSinceOverride += dt;
+        }
+
+        if (inputs.targetChanged) {
+            state.secondsSinceTargetChange = 0.0;
+        } else {
+            state.secondsSinceTargetChange += dt;
+        }
+
+        state.secondsSinceCoast += dt;
+
+        double light = sunlightNow(inputs);
+        state.sunHeat.update(light, dt);
+        if (light > tuning.learnSunlight) {
+            state.secondsSinceSun = 0.0;
+        } else {
+            state.secondsSinceSun += dt;
+        }
+
+        Double slow = state.indoorSlow.value();
+        if (slow != null && slow > tuning.roomTarget + tuning.learnOverTarget) {
+            state.secondsOverTarget += dt;
+        } else {
+            state.secondsOverTarget = 0.0;
+        }
+
+        if (inputs.sweeping) {
+            state.secondsSinceSweep = 0.0;
+        } else {
+            state.secondsSinceSweep += dt;
+        }
+
+        state.secondsSinceShortfall += dt;
+        state.secondsSinceOff += dt;
+        state.secondsSinceFailsafe += dt;
+
+        if (inputs.sinceFailsafe != null) {
+            state.secondsSinceFailsafe = Math.clamp(inputs.sinceFailsafe, 0.0, state.secondsSinceFailsafe);
+        }
+
+        if (inputs.flow == null) {
+            state.secondsWithoutFlow += dt;
+            out.degraded.add("flow");
+        } else {
+            state.secondsWithoutFlow = 0.0;
+        }
+
+        if (inputs.ret == null) {
+            out.degraded.add("return");
+        }
+
     }                   // klockorna i state: override/nödkörning, målbyte, sparläget (bara upp), solen (sunHeat och > learnSunlight), över mål på indoorSlow, sotning, brist/av/vakthund (upp; since_failsafe drar ner, aldrig under 0), utan tillopp (degraded "flow"), retur (degraded "return")
 
     double curveOutdoor(Double measured, double filtered) {
-        return 0.0;
+        return measured == null || measured >= filtered ?
+                filtered : filtered - tuning.outdoorFallLead * Math.min(filtered - measured, tuning.outdoorFallLimit);
     }                   // det ute kurvan läser: den filtrerade, och i en kallfront outdoorFallLead av vägen ner mot den mätta, högst outdoorFallLimit grader
 
     CurvePoint curve(double outdoor) {
-        return null;
+        return new CurvePoint(curveFlow(outdoor, effectiveSlope(), balance()), effectiveSlope());
     }                   // curveFlow(outdoor, effectiveSlope(), balance()) och lutningen den räknade med
 
     public double curvature() {
-        return 0.0;
+        return effectiveCurvature(tuning, state);
     }                   // Model.effectiveCurvature(tuning, state)
 
     public double effectiveSlope() {
-        return 0.0;
+        return clamp(
+                tuning.curveSlope + state.slopeTrim,
+                tuning.slopeMin,
+                tuning.slopeMax
+        );
     }                   // curveSlope + state.slopeTrim, hållen mellan slopeMin och slopeMax
 
     public double balance() {
-        return 0.0;
+        return tuning.roomTarget + state.balanceShift;
     }                   // roomTarget + state.balanceShift: utetemperaturen under vilken huset behöver värme
 
     double curveFlow(double outdoor, double slope, double balance) {
-        return 0.0;
+        return Curve.supply(
+                outdoor,
+                tuning.roomTarget,
+                tuning.designOutdoor,
+                slope,
+                curvature(),
+                balance
+        );
     }                   // Curve.supply(outdoor, roomTarget, designOutdoor, slope, curvature(), balance)
 
     double curveFlow(double outdoor, double slope, double balance, Double curvature) {
-        return 0.0;
+        return Curve.supply(
+                outdoor,
+                tuning.roomTarget,
+                tuning.designOutdoor,
+                slope,
+                curvature == null ? this.curvature() : curvature,
+                balance);
     }                   // samma med en given böj; null är curvature()
 
     public double curveAt(double outdoor) {
-        return 0.0;
+        return curveAt(outdoor, null, null, null);
+
     }                   // kurvan i bruk vid en utetemperatur, hållen till flowMin-flowMax: för att rita den
 
     public double curveAt(double outdoor, Double slope, Double balance, Double curvature) {
-        return 0.0;
+
+        double flow = curveFlow(
+                outdoor,
+                slope == null ? effectiveSlope() : slope,
+                balance == null ? balance() : balance,
+                curvature
+        );
+
+        return tuning.clampFlow(flow);
     }                   // samma med given lutning, balans och böj; null är den i bruk
 }
