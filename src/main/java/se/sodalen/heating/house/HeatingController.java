@@ -441,4 +441,36 @@ public class HeatingController {
 
         return tuning.clampFlow(flow);
     }                   // samma med given lutning, balans och böj; null är den i bruk
+
+    // --- Steg 14: deltat och radiatorvakten ------------------------------------------------------
+
+    Delta delta(ControlInputs inputs, Double indoor, double demand, ControlOutput out) {
+        return null;
+    }                   // Pythons _delta med standardvärdena: dt 0.0, baseFlow null, room null
+
+    Delta delta(ControlInputs inputs, Double indoor, double demand, ControlOutput out,
+                double dt, Double baseFlow, Double room) {
+        return null;
+    }                   // korrigeringen ur hur mycket värme radiatorerna tar; tyst (DELTA_QUIET_*) utan givare, avstängd, lågt behov eller ljummet tillopp; inneslingan har sista ordet åt båda håll
+
+    void said(String key, boolean learning, String why, Double value) {
+    }                   // en lärares utlåtande den här cykeln i out.learning; utan cykel (out == null) sägs ingenting
+
+    void forgetDelta() {
+    }                   // deltafiltret tomt, den hållna korrigeringen 0, settled och unsettled 0
+
+    double deltaTrim(ControlInputs inputs, double delta, double expected, double weight, double dt, ControlOutput out) {
+        return 0.0;
+    }                   // korrigeringen, dömd bara när tilloppet står stilla; uppvärmning efter stopp: 0 och "delta_warming"; på väg: den hållna, i högst deltaHoldMaxSeconds
+
+    void watchRadiators(String mode, Double indoor, Double delta, Double expected, double dt, ControlOutput out) {
+    }                   // Pythons _watch_radiators med sweeping False
+
+    void watchRadiators(String mode, Double indoor, Double delta, Double expected, double dt, ControlOutput out,
+                        boolean sweeping) {
+    }                   // radiatorer som tar för lite värme ur ett kallt hus; döms bara i värmeläge, utan sotning, med fullt deltavikt; varningen upp vid starvedShare, ned först under STARVED_RELEASE av den
+
+    double deltaWeight(double supply, Double room) {
+        return 0.0;
+    }                   // hur mycket deltat är värt, 0 till 1, ur tilloppet över rummet: en ramp över deltaFade från deltaMinOvertemp; deltaFade <= 0 är en brytare
 }

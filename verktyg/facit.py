@@ -1990,7 +1990,7 @@ def controller(core, rng) -> None:
     write(step, "sunlight_now.csv", ["sunlight", "sun_elevation", "cloud", "expected"], rows)
 
     rows = []
-    kinds = list(m.EMERGENCY_KINDS) + ["x"]
+    kinds = sorted(m.EMERGENCY_KINDS) + ["x"]
     for position, flow in ((0.5, 44.5), (1.5, 45.5), (2.5, 20.5), (50.5, 35.5), (64.4, 64.6), (99.5, 69.5)):
         for kind in kinds:
             rows.append([kind, position, flow, t.emergency_reason(kind, position, flow)])
@@ -2239,6 +2239,342 @@ def cycle_start(core, rng) -> None:
                               "at_slope", "at_balance", "at_curvature", "curve_at_given"], rows)
 
 
+def delta_and_radiators(core, rng) -> None:
+    """Steg 14, deltat och radiatorvakten: _delta_weight, _delta_trim, _delta och _watch_radiators."""
+    m, c, est = core.model, core.controller, core.estimators
+    step = "14-deltat-radiatorvakten"
+
+    def maybe(value, chance=0.2):
+        return None if rng.random() < chance else value
+
+    def temperature(low, high):
+        return round(rng.uniform(low, high), rng.choice([1, 2, 6]))
+
+    def a_dt():
+        return rng.choice([30.0, 30.0, 30.0, 0.0, 600.0, round(rng.uniform(1.0, 3600.0), 3)])
+
+    def branch(counts, key):
+        counts[key] = counts.get(key, 0) + 1
+
+    def show(name, counts):
+        print(f"{step}/{name}: " + ", ".join(f"{key} {count}" for key, count in sorted(counts.items())))
+
+    # --- _delta_weight: rampen, brytaren (delta_fade <= 0) och rummet som saknas (då målet).
+    fixed = [
+        (21.0, 10.0, 5.0, 31.0, 21.0), (21.0, 10.0, 5.0, 36.0, 21.0), (21.0, 10.0, 5.0, 33.5, 21.0),
+        (21.0, 10.0, 5.0, 30.9, 21.0), (21.0, 10.0, 5.0, 31.0, None), (21.0, 10.0, 0.0, 31.0, 21.0),
+        (21.0, 10.0, 0.0, 30.99, 21.0), (21.0, 10.0, -1.0, 31.0, None), (21.0, 10.0, -1.0, 20.0, None),
+        (21.0, 0.0, 5.0, 21.0, 21.0), (21.0, 10.0, 5.0, 10.0, 21.0), (20.0, 10.0, 0.0, 30.0, None),
+    ]
+    rows = []
+    for i in range(300):
+        if i < len(fixed):
+            target, overtemp, fade, supply, room = fixed[i]
+        else:
+            target = rng.choice([21.0, 21.0, temperature(18.0, 24.0)])
+            overtemp = rng.choice([10.0, 10.0, 0.0, 5.0, round(rng.uniform(0.0, 20.0), 2)])
+            fade = rng.choice([5.0, 5.0, 0.0, 0.0, -1.0, round(rng.uniform(0.1, 10.0), 2)])
+            supply = temperature(15.0, 70.0)
+            room = maybe(temperature(14.0, 30.0), 0.25)
+        made_loop = c.HeatingController(m.Tuning(room_target=target, delta_min_overtemp=overtemp, delta_fade=fade),
+                                        m.LearnedState())
+        rows.append([target, overtemp, fade, supply, room, made_loop._delta_weight(supply, room)])
+    write(step, "delta_weight.csv", ["room_target", "delta_min_overtemp", "delta_fade", "supply", "room", "weight"], rows)
+
+    # Det som _delta_trim läser och skriver, i en fast ordning.
+    trim_fields = ["delta_warmup_seconds", "delta_settle_band", "delta_settle_seconds", "delta_hold_max_seconds",
+                   "delta_filter_seconds", "delta_gain", "delta_lower_limit", "delta_raise_limit"]
+    trim_state = ["seconds_since_stop", "last_flow_setpoint", "seconds_settled", "seconds_unsettled",
+                  "delta_trim_held"]
+
+    def trim_tuning():
+        return dict(
+            delta_warmup_seconds=rng.choice([2700.0, 2700.0, 0.0, round(rng.uniform(0.0, 5400.0), 1)]),
+            delta_settle_band=rng.choice([1.0, 1.0, 0.0, 0.5, round(rng.uniform(0.0, 3.0), 2)]),
+            delta_settle_seconds=rng.choice([300.0, 300.0, 0.0, round(rng.uniform(0.0, 1200.0), 1)]),
+            delta_hold_max_seconds=rng.choice([1800.0, 1800.0, 0.0, round(rng.uniform(0.0, 3600.0), 1)]),
+            delta_filter_seconds=rng.choice([900.0, 900.0, 0.0, round(rng.uniform(1.0, 3600.0), 1)]),
+            delta_gain=rng.choice([1.2, 1.2, 0.0, round(rng.uniform(0.0, 3.0), 3)]),
+            delta_lower_limit=rng.choice([6.0, 6.0, 0.0, round(rng.uniform(0.0, 10.0), 2)]),
+            delta_raise_limit=rng.choice([2.0, 2.0, 0.0, round(rng.uniform(0.0, 5.0), 2)]),
+        )
+
+    def trim_before(tuning, flow, warm_share=0.15):
+        """Klockorna före: oftast förbi uppvärmningen, börvärdet oftast nära tilloppet."""
+        since_stop = (round(rng.uniform(0.0, tuning["delta_warmup_seconds"]), 1)
+                      if rng.random() < warm_share and tuning["delta_warmup_seconds"] > 0.0
+                      else rng.choice([1e9, 1e9, tuning["delta_warmup_seconds"], round(rng.uniform(0.0, 20000.0), 1)]))
+        band = tuning["delta_settle_band"]
+        setpoint = rng.choice([
+            None, round(flow + rng.uniform(-band, band), 3), round(flow + rng.uniform(-band, band), 3),
+            round(flow + rng.uniform(-band, band), 3), flow + band, round(flow + rng.uniform(-10.0, 10.0), 2),
+        ])
+        settle = tuning["delta_settle_seconds"]
+        hold = tuning["delta_hold_max_seconds"]
+        return {
+            "seconds_since_stop": since_stop,
+            "last_flow_setpoint": setpoint,
+            "seconds_settled": rng.choice([0.0, settle, 1e6, round(rng.uniform(0.0, 2.0 * settle + 60.0), 1)]),
+            "seconds_unsettled": rng.choice([0.0, 0.0, hold, round(rng.uniform(0.0, hold + 60.0), 1)]),
+            "delta_trim_held": rng.choice([0.0, 0.0, round(rng.uniform(-6.0, 2.0), 3)]),
+            "delta_filter": maybe(temperature(0.0, 20.0), 0.3),
+        }
+
+    def set_state(state, before):
+        for name, value in before.items():
+            if name == "delta_filter":
+                state.delta_filter.value = value
+            elif name == "delta_scale":
+                state.delta_scale.value = value
+            else:
+                setattr(state, name, value)
+
+    def get_state(state, names):
+        got = {}
+        for name in names:
+            got[name] = (state.delta_filter.value if name == "delta_filter"
+                         else state.delta_scale.value if name == "delta_scale" else getattr(state, name))
+        return got
+
+    def trim_branch(out, trim):
+        if "delta_warming" in out.flags:
+            return "warming"
+        if "delta_held_moving" in out.flags:
+            return "held"
+        if out.delta_read is not None:
+            return "settled"
+        return "let_go"
+
+    # --- _delta_trim: uppvärmningen, stilla (filtret), på väg (hållet) och på väg för länge (släpper).
+    defaults = {name: getattr(m.Tuning(), name) for name in trim_fields}
+    base = {"seconds_since_stop": 1e9, "last_flow_setpoint": 45.0, "seconds_settled": 0.0,
+            "seconds_unsettled": 0.0, "delta_trim_held": -1.0, "delta_filter": 6.0}
+    fixed = [
+        # (tuning, before, flow, delta, expected, weight, dt)
+        (defaults, dict(base, seconds_since_stop=0.0), 45.0, 6.0, 8.0, 1.0, 30.0),
+        (defaults, dict(base, seconds_since_stop=2700.0, seconds_settled=300.0), 45.0, 6.0, 8.0, 1.0, 30.0),
+        (defaults, dict(base, seconds_since_stop=2699.9), 45.0, 6.0, 8.0, 1.0, 30.0),
+        (defaults, dict(base, seconds_settled=270.0), 46.0, 6.0, 8.0, 1.0, 30.0),
+        (defaults, dict(base, seconds_settled=270.0), 46.01, 6.0, 8.0, 1.0, 30.0),
+        (defaults, dict(base, seconds_settled=260.0), 45.0, 6.0, 8.0, 1.0, 30.0),
+        (defaults, dict(base, last_flow_setpoint=None, seconds_settled=1e6), 45.0, 6.0, 8.0, 1.0, 30.0),
+        (defaults, dict(base, seconds_unsettled=1770.0), 50.0, 6.0, 8.0, 1.0, 30.0),
+        (defaults, dict(base, seconds_unsettled=1760.0), 50.0, 6.0, 8.0, 1.0, 30.0),
+        (defaults, dict(base, seconds_settled=1e6, delta_filter=None), 45.0, 2.0, 10.0, 0.5, 30.0),
+        (defaults, dict(base, seconds_settled=1e6), 45.0, 30.0, 8.0, 1.0, 30.0),
+        (defaults, dict(base, seconds_settled=1e6), 45.0, 6.0, 8.0, 1.0, 0.0),
+        (dict(defaults, delta_settle_seconds=0.0), dict(base, last_flow_setpoint=None), 45.0, 6.0, 8.0, 1.0, 0.0),
+    ]
+    counts = {}
+    rows = []
+    for i in range(600):
+        if i < len(fixed):
+            tuning_kw, before, flow, delta, expected, weight, dt = fixed[i]
+        else:
+            tuning_kw = trim_tuning()
+            flow = temperature(20.0, 70.0)
+            before = trim_before(tuning_kw, flow)
+            delta = rng.choice([round(rng.uniform(-2.0, 25.0), 3), temperature(0.0, 20.0)])
+            expected = rng.choice([1.0, 10.0, round(rng.uniform(1.0, 15.0), 3)])
+            weight = rng.choice([1.0, 1.0, 0.5, round(rng.uniform(0.0, 1.0), 4)])
+            dt = a_dt()
+        made_loop = c.HeatingController(m.Tuning(**tuning_kw), m.LearnedState())
+        set_state(made_loop.state, before)
+        out = m.ControlOutput()
+        trim = made_loop._delta_trim(m.ControlInputs(dt=dt, flow=flow), delta, expected, weight, dt, out)
+        branch(counts, trim_branch(out, trim))
+        rows.append([_stored({name: tuning_kw[name] for name in trim_fields}), _stored(before), flow, delta, expected,
+                     weight, dt, trim, "|".join(out.flags), out.delta_read, out.delta_warming_left,
+                     _stored(get_state(made_loop.state, list(before)))])
+    write(step, "delta_trim.csv", ["tuning", "before", "flow", "delta", "expected", "weight", "dt", "trim", "flags",
+                                   "delta_read", "warming_left", "after"], rows)
+    show("delta_trim.csv", counts)
+
+    # --- _delta: tyst av fyra skäl (givare, av, lågt behov, ljumt), annars förväntat delta och
+    # rättelsen, som inomhusslingan får sista ordet över åt båda hållen.
+    delta_fields = ["delta_enabled", "delta_min_demand", "delta_min_overtemp", "delta_fade", "delta_design",
+                    "delta_cold_guard", "room_target"] + trim_fields
+    full = dict({name: getattr(m.Tuning(), name) for name in delta_fields})
+    settled = {"delta_scale": None, "seconds_since_stop": 1e9, "last_flow_setpoint": 45.0, "seconds_settled": 1e6,
+               "seconds_unsettled": 0.0, "delta_trim_held": 0.0, "delta_filter": 8.0}
+    fixed = [
+        # (tuning, before, flow, ret, indoor, demand, dt, base_flow, room)
+        (full, settled, None, 38.0, 21.0, 0.5, 30.0, None, None),
+        (full, settled, 45.0, None, 21.0, 0.5, 30.0, None, None),
+        (dict(full, delta_enabled=False), settled, 45.0, 38.0, 21.0, 0.5, 30.0, None, None),
+        (full, settled, 45.0, 38.0, 21.0, 0.15, 30.0, None, None),
+        (full, settled, 45.0, 38.0, 21.0, 0.149, 30.0, None, None),
+        (full, settled, 31.0, 26.0, 21.0, 0.5, 30.0, None, None),
+        (full, settled, 31.0, 26.0, None, 0.5, 30.0, None, None),
+        (full, settled, 45.0, 38.0, 21.0, 0.5, 30.0, 30.0, None),
+        (full, settled, 45.0, 38.0, 21.0, 0.5, 30.0, None, 36.0),
+        (full, dict(settled, delta_filter=2.0), 45.0, 43.0, 20.0, 0.5, 30.0, None, None),   # kallt: hålls
+        (full, dict(settled, delta_filter=2.0), 45.0, 43.0, 20.7, 0.5, 30.0, None, None),   # på vakten: sänks
+        (full, dict(settled, delta_filter=2.0), 45.0, 43.0, None, 0.5, 30.0, None, None),   # utan inne: sänks
+        (full, dict(settled, delta_filter=20.0), 45.0, 25.0, 22.0, 0.5, 30.0, None, None),
+        (full, dict(settled, delta_filter=20.0), 45.0, 25.0, 21.3, 0.5, 30.0, None, None),
+        (full, dict(settled, delta_scale=0.05), 45.0, 44.0, 21.0, 0.05 + 0.15, 30.0, None, None),
+        (full, dict(settled, delta_scale=2.0), 45.0, 38.0, 21.0, 1.5, 30.0, None, None),
+        (full, dict(settled, seconds_since_stop=0.0), 45.0, 38.0, 21.0, 0.5, 30.0, None, None),
+    ]
+    counts = {}
+    rows = []
+    for i in range(800):
+        if i < len(fixed):
+            tuning_kw, before, flow, ret, indoor, demand, dt, base_flow, room = fixed[i]
+        else:
+            tuning_kw = dict(
+                delta_enabled=rng.random() < 0.92,
+                delta_min_demand=rng.choice([0.15, 0.15, 0.0, round(rng.uniform(0.0, 0.5), 3)]),
+                delta_min_overtemp=rng.choice([10.0, 10.0, 0.0, round(rng.uniform(0.0, 20.0), 2)]),
+                delta_fade=rng.choice([5.0, 5.0, 0.0, -1.0, round(rng.uniform(0.1, 10.0), 2)]),
+                delta_design=rng.choice([10.0, 10.0, 0.5, round(rng.uniform(1.0, 20.0), 2)]),
+                delta_cold_guard=rng.choice([0.3, 0.3, 0.0, round(rng.uniform(0.0, 2.0), 2)]),
+                room_target=rng.choice([21.0, 21.0, temperature(18.0, 24.0)]),
+                **trim_tuning(),
+            )
+            flow = maybe(temperature(20.0, 70.0), 0.06)
+            ret = maybe(temperature(15.0, 65.0) if flow is None else round(flow - rng.uniform(-2.0, 25.0), 3), 0.06)
+            before = dict({"delta_scale": maybe(round(rng.uniform(0.1, 3.0), 4), 0.3)},
+                          **trim_before(tuning_kw, 45.0 if flow is None else flow, warm_share=0.08))
+            indoor = maybe(temperature(17.0, 25.0), 0.15)
+            demand = rng.choice([0.0, 0.1, 0.15, 1.2, 1.5, round(rng.uniform(0.0, 1.5), 3)])
+            dt = a_dt()
+            base_flow = maybe(temperature(20.0, 70.0), 0.7)
+            room = maybe(temperature(17.0, 25.0), 0.75)
+        made_loop = c.HeatingController(m.Tuning(**tuning_kw), m.LearnedState())
+        set_state(made_loop.state, before)
+        raw = []
+        inner = made_loop._delta_trim
+
+        def spy(*args, inner=inner, raw=raw):
+            raw.append(inner(*args))
+            return raw[-1]
+
+        made_loop._delta_trim = spy
+        out = m.ControlOutput()
+        delta, expected, trim = made_loop._delta(m.ControlInputs(dt=dt, flow=flow, ret=ret), indoor, demand, out,
+                                                 dt, base_flow, room)
+        if out.delta_quiet:
+            branch(counts, "quiet_" + out.delta_quiet)
+        elif "delta_held_cold" in out.flags:
+            branch(counts, "held_cold")
+        elif raw and raw[0] != 0.0 and trim == 0.0:
+            branch(counts, "zeroed_warm")
+        elif trim != 0.0:
+            branch(counts, "trim_" + ("down" if trim < 0.0 else "up"))
+        else:
+            branch(counts, "trim_zero")
+        rows.append([_stored({name: tuning_kw[name] for name in delta_fields}), _stored(before), flow, ret, indoor,
+                     demand, dt, base_flow, room, delta, expected, trim, out.delta_quiet, out.delta_weight,
+                     out.delta_readable_from, out.delta_read, out.delta_warming_left, "|".join(out.flags),
+                     _stored(get_state(made_loop.state, list(before)))])
+    write(step, "delta.csv", ["tuning", "before", "flow", "ret", "indoor", "demand", "dt", "base_flow", "room", "delta",
+                              "expected", "trim", "quiet", "weight", "readable_from", "read", "warming_left", "flags",
+                              "after"], rows)
+    show("delta.csv", counts)
+
+    # --- _watch_radiators: bedöms bara i värmeläge, utan svep och med fullt delta; varningen går upp
+    # vid starved_share och ner först under 0,8 av den.
+    watch_fields = ["starved_margin", "starved_share", "starved_min_hours", "starved_horizon_seconds", "room_target",
+                    "delta_cold_guard", "learn_after_override_seconds"]
+    plain = {name: getattr(m.Tuning(), name) for name in watch_fields}
+    six = 6.0 * 3600.0
+    fixed = [
+        # (tuning, since_sweep, (share, weight), starved, mode, indoor, delta, expected, dt, sweeping, delta_weight)
+        (plain, 1e9, (0.45, six * 2), True, c.MODE_HEATING, 21.0, 8.0, 8.0, 30.0, False, 1.0),
+        (plain, 1e9, (0.45, six * 2), False, c.MODE_HEATING, 21.0, 8.0, 8.0, 30.0, False, 1.0),
+        (plain, 1e9, (0.39, six * 2), True, c.MODE_HEATING, 21.0, 8.0, 8.0, 30.0, False, 1.0),
+        (plain, 1e9, (0.5, six * 2), False, c.MODE_HEATING, 20.0, 5.6, 8.0, 30.0, False, 1.0),
+        (plain, 1e9, (0.5, six * 2), False, c.MODE_HEATING, 20.7, 5.6, 8.0, 30.0, False, 1.0),
+        (plain, 1e9, (0.9, six - 1.0), False, c.MODE_HEATING, 20.0, 2.0, 8.0, 0.0, False, 1.0),
+        (plain, 1e9, (None, 0.0), False, c.MODE_HEATING, 20.0, 2.0, 8.0, 30.0, False, 1.0),
+        (plain, 7200.0, (0.6, six * 2), False, c.MODE_HEATING, 20.0, 2.0, 8.0, 30.0, False, 1.0),
+        (plain, 7199.0, (0.6, six * 2), False, c.MODE_HEATING, 20.0, 2.0, 8.0, 30.0, False, 1.0),
+        (plain, 1e9, (0.6, six * 2), False, c.MODE_HEATING, 20.0, 2.0, 8.0, 30.0, True, 1.0),
+        (plain, 1e9, (0.6, six * 2), False, c.MODE_HEATING, 20.0, 2.0, 8.0, 30.0, False, 0.999),
+        (plain, 1e9, (0.6, six * 2), False, c.MODE_HEATING, None, 2.0, 8.0, 30.0, False, 1.0),
+        (plain, 1e9, (0.6, six * 2), False, c.MODE_HEATING, 20.0, None, 8.0, 30.0, False, 1.0),
+        (plain, 1e9, (0.6, six * 2), False, c.MODE_HEATING, 20.0, 2.0, None, 30.0, False, 1.0),
+        (plain, 1e9, (0.6, six * 2), False, c.MODE_SUMMER, 20.0, 2.0, 8.0, 30.0, False, 1.0),
+    ]
+    modes = [c.MODE_HEATING] * 6 + [c.MODE_SUMMER, c.MODE_WARM, c.MODE_COAST, c.MODE_HOLD, c.MODE_OFF]
+    counts = {}
+    rows = []
+    for i in range(600):
+        if i < len(fixed):
+            tuning_kw, since_sweep, (share, weight), starved, mode, indoor, delta, expected, dt, sweeping, \
+                delta_weight = fixed[i]
+        else:
+            tuning_kw = dict(
+                starved_margin=rng.choice([0.3, 0.3, 0.0, round(rng.uniform(0.0, 0.8), 3)]),
+                starved_share=rng.choice([0.5, 0.5, 0.0, 1.0, round(rng.uniform(0.05, 1.0), 3)]),
+                starved_min_hours=rng.choice([6.0, 6.0, 0.0, round(rng.uniform(0.0, 24.0), 2)]),
+                starved_horizon_seconds=rng.choice([3.0 * 24.0 * 3600.0, 3.0 * 24.0 * 3600.0, 0.0,
+                                                    round(rng.uniform(600.0, 5.0 * 24.0 * 3600.0), 1)]),
+                room_target=rng.choice([21.0, 21.0, temperature(18.0, 24.0)]),
+                delta_cold_guard=rng.choice([0.3, 0.3, 0.0, round(rng.uniform(0.0, 2.0), 2)]),
+                learn_after_override_seconds=rng.choice([7200.0, 7200.0, 0.0, round(rng.uniform(0.0, 14400.0), 1)]),
+            )
+            since_sweep = rng.choice([1e9, 1e9, 1e9, tuning_kw["learn_after_override_seconds"],
+                                      round(rng.uniform(0.0, 20000.0), 1)])
+            line = tuning_kw["starved_share"]
+            share = rng.choice([None, round(rng.uniform(0.0, 1.0), 4), round(rng.uniform(0.8 * line, line), 4),
+                                round(rng.uniform(0.8 * line, line), 4), line, 0.8 * line])
+            hours = tuning_kw["starved_min_hours"]
+            weight = rng.choice([0.0, hours * 3600.0, round(rng.uniform(0.0, 2.0 * hours * 3600.0 + 3600.0), 1),
+                                 round(rng.uniform(hours * 3600.0, 3.0 * hours * 3600.0 + 3600.0), 1)])
+            starved = rng.random() < 0.45
+            mode = rng.choice(modes)
+            target, guard = tuning_kw["room_target"], tuning_kw["delta_cold_guard"]
+            indoor = maybe(rng.choice([target - guard, round(target - rng.uniform(0.0, 3.0), 2),
+                                       round(target + rng.uniform(-1.0, 2.0), 2)]), 0.1)
+            expected = maybe(rng.choice([1.0, 10.0, round(rng.uniform(1.0, 15.0), 3)]), 0.1)
+            margin = tuning_kw["starved_margin"]
+            delta = maybe(rng.choice([
+                round(rng.uniform(-2.0, 20.0), 3),
+                None if expected is None else expected - margin * expected,
+                None if expected is None else round(expected * (1.0 - margin) - rng.uniform(0.0, 3.0), 3),
+            ]), 0.1)
+            dt = a_dt()
+            sweeping = rng.random() < 0.1
+            delta_weight = rng.choice([1.0, 1.0, 1.0, 0.0, 0.999, round(rng.uniform(0.0, 1.0), 3)])
+        made_loop = c.HeatingController(m.Tuning(**tuning_kw), m.LearnedState())
+        state = made_loop.state
+        state.seconds_since_sweep = since_sweep
+        state.starved = est.DutyWatch.from_dict({"share": share, "weight": weight},
+                                                tuning_kw["starved_horizon_seconds"])
+        made_loop._starved = starved
+        watch_before = state.starved.as_dict()
+        judged = []
+        inner = state.starved.update
+
+        def spy(held, dt, inner=inner, judged=judged):
+            judged.append(held)
+            inner(held, dt)
+
+        state.starved.update = spy
+        out = m.ControlOutput()
+        out.delta_weight = delta_weight
+        made_loop._watch_radiators(mode, indoor, delta, expected, dt, out, sweeping)
+        held = judged[0]
+        line = tuning_kw["starved_share"]
+        if share is not None and 0.8 * line <= share < line:
+            branch(counts, "between_" + ("kept" if starved and out.radiators_starved
+                                          else "up_stays_down" if not starved and not out.radiators_starved
+                                          else "changed"))
+        branch(counts, "judged_" + ("none" if held is None else str(held).lower()))
+        branch(counts, f"starved_{str(starved).lower()}_to_{str(out.radiators_starved).lower()}")
+        rows.append([_stored({name: tuning_kw[name] for name in watch_fields}), since_sweep, _stored(watch_before),
+                     _bool(starved), mode, indoor, delta, expected, dt, _bool(sweeping), delta_weight, _bool(held),
+                     _bool(out.radiators_starved), "|".join(out.flags), _stored(state.starved.as_dict()),
+                     _bool(made_loop._starved)])
+    write(step, "watch_radiators.csv", ["tuning", "seconds_since_sweep", "watch_before", "starved_before", "mode",
+                                        "indoor", "delta", "expected", "dt", "sweeping", "delta_weight", "judged_held",
+                                        "radiators_starved", "flags", "watch_after", "starved_after"], rows)
+    show("watch_radiators.csv", counts)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -2259,13 +2595,15 @@ def main() -> int:
     model(core, rng)
     controller(core, rng)  # sist: stegen före får samma slumptal som förut
     cycle_start(core, rng)
+    delta_and_radiators(core, rng)
     for step, *modules in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
                            ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
                            ("06-skattarna", "estimators"), ("07-husmodellen", "thermal"),
                            ("08-prognosen", "forecast"), ("09-kurvanpassningen", "curvefit"),
                            ("10-brannaren", "burner"), ("11-modellen", "model", "parsing", "sunterm"),
                            ("12-grunden", "controller", "texts"),
-                           ("13-ute-inne-kurvan", "controller")):
+                           ("13-ute-inne-kurvan", "controller"),
+                           ("14-deltat-radiatorvakten", "controller")):
         for module in modules:
             copy_source(heating, step, module)
     return 0
