@@ -607,4 +607,30 @@ public class HeatingController {
 
         return clamp((over - tuning.deltaMinOvertemp) / tuning.deltaFade, 0.0, 1.0);
     }                   // hur mycket deltat är värt, 0 till 1, ur tilloppet över rummet: en ramp över deltaFade från deltaMinOvertemp; deltaFade <= 0 är en brytare
+
+    // --- Steg 15: läget och värmekällan -----------------------------------------------------------
+
+    String mode(ControlInputs inputs, double outdoorSummer, Double indoor) {
+        return null;
+    }                   // vilket stopp som gäller, om något: MODE_OFF, MODE_SUMMER (dygnssnittet med hysteres), MODE_WARM (inne över mål + marginal, med hysteres), MODE_FAILSAFE/MODE_HOLD utan tilloppsgivare, annars MODE_HEATING
+
+    Double coldBoilerCap(ControlInputs inputs) {
+        return null;
+    }                   // pannskyddet: hur långt ventilen får öppna i procent för pannans skull, null när pannan är varm nog (eller band <= 0, eller boiler/boilerLimit saknas); en linje från coldBoilerFloor till 100 över coldBoilerBand
+
+    boolean boilerOverheated(Double boiler) {
+        return false;
+    }                   // för het för brännaren: slår till vid boilerMax, släpper vid boilerMaxRelease, hålls genom en saknad mätning
+
+    boolean heatSource(String mode, double dt, boolean hotWater, ControlOutput out) {
+        return false;
+    }                   // Pythons _heat_source med sweeping False
+
+    boolean heatSource(String mode, double dt, boolean hotWater, ControlOutput out, boolean sweeping) {
+        return false;
+    }                   // ska brännaren gå: secondsStopped räknas i stoppade lägen; överhettad panna ("boiler_overheat") och sotning ("sweeping") går före allt, varmvattnet ("hot_water") före varje stopp, sedan burnerForHeating
+
+    boolean burnerForHeating(String mode, ControlOutput out, boolean stopped) {
+        return false;
+    }                   // vill radiatorerna ha brännaren, varmvattnet oräknat: coast = inte coastBurner; inte stoppat = ja; varm med coastBurner = nej; får stängas av enligt inställningen för läget, och först efter heatSourceOffDelay
 }

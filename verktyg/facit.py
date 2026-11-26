@@ -2575,6 +2575,333 @@ def delta_and_radiators(core, rng) -> None:
     show("watch_radiators.csv", counts)
 
 
+def mode_and_heat_source(core, rng) -> None:
+    """Steg 15, läget och värmekällan: _mode, _cold_boiler_cap, _boiler_overheated, _heat_source
+    och _burner_for_heating."""
+    m, c = core.model, core.controller
+    step = "15-laget-varmekallan"
+
+    def maybe(value, chance=0.2):
+        return None if rng.random() < chance else value
+
+    def temperature(low, high):
+        return round(rng.uniform(low, high), rng.choice([1, 2, 6]))
+
+    def a_dt():
+        return rng.choice([30.0, 30.0, 30.0, 0.0, 600.0, round(rng.uniform(1.0, 3600.0), 3)])
+
+    def branch(counts, key):
+        counts[key] = counts.get(key, 0) + 1
+
+    def show(name, counts):
+        print(f"{step}/{name}: " + ", ".join(f"{key} {count}" for key, count in sorted(counts.items())))
+
+    def loop(**tuning):
+        return c.HeatingController(m.Tuning(**tuning), m.LearnedState())
+
+    # --- _mode: av, sommar (in, kvar, ut, och inom hysteresen åt båda hållen), varmt (likadant,
+    # och inget inne som släpper det), failsafe mot håll (precis på gränsen också) och värme.
+    mode_fields = ["summer_outdoor", "summer_hysteresis", "room_target", "warm_stop_margin", "warm_stop_hysteresis",
+                   "failsafe_after_seconds"]
+    plain = {name: getattr(m.Tuning(), name) for name in mode_fields}
+    fixed = [
+        # (tuning, (summer_before, warm_before), enabled, outdoor_summer, indoor, flow, seconds_without_flow)
+        (plain, (True, True), False, 20.0, 23.0, 45.0, 0.0),
+        (plain, (False, False), True, 17.0, 21.0, 45.0, 0.0),
+        (plain, (False, False), True, 16.99, 21.0, 45.0, 0.0),
+        (plain, (True, False), True, 15.5, 21.0, 45.0, 0.0),
+        (plain, (True, False), True, 15.49, 21.0, 45.0, 0.0),
+        (plain, (False, False), True, 16.0, 21.0, 45.0, 0.0),
+        (plain, (False, False), True, 10.0, 22.0, 45.0, 0.0),
+        (plain, (False, False), True, 10.0, 22.01, 45.0, 0.0),
+        (plain, (False, True), True, 10.0, 21.7, 45.0, 0.0),
+        (plain, (False, True), True, 10.0, 21.69, 45.0, 0.0),
+        (plain, (False, True), True, 10.0, None, 45.0, 0.0),
+        (plain, (False, False), True, 10.0, 21.0, None, 600.0),
+        (plain, (False, False), True, 10.0, 21.0, None, 599.0),
+        (plain, (False, False), True, 10.0, None, None, 0.0),
+        (dict(plain, failsafe_after_seconds=0.0), (False, False), True, 10.0, 21.0, None, 0.0),
+    ]
+    counts = {}
+    rows = []
+    for i in range(600):
+        if i < len(fixed):
+            tuning_kw, (summer_before, warm_before), enabled, outdoor_summer, indoor, flow, without = fixed[i]
+        else:
+            tuning_kw = dict(
+                summer_outdoor=rng.choice([17.0, 17.0, round(rng.uniform(10.0, 22.0), 1)]),
+                summer_hysteresis=rng.choice([1.5, 1.5, 0.0, round(rng.uniform(0.0, 4.0), 2)]),
+                room_target=rng.choice([21.0, 21.0, temperature(18.0, 24.0)]),
+                warm_stop_margin=rng.choice([1.0, 1.0, 0.0, round(rng.uniform(0.0, 3.0), 2)]),
+                warm_stop_hysteresis=rng.choice([0.3, 0.3, 0.0, round(rng.uniform(0.0, 1.5), 2)]),
+                failsafe_after_seconds=rng.choice([600.0, 600.0, 0.0, round(rng.uniform(0.0, 3600.0), 1)]),
+            )
+            summer_before, warm_before = rng.random() < 0.35, rng.random() < 0.4
+            enabled = rng.random() < 0.9
+            s, h = tuning_kw["summer_outdoor"], tuning_kw["summer_hysteresis"]
+            outdoor_summer = rng.choice([s, s - h, round(s - rng.uniform(0.0, h), 3), round(s - rng.uniform(0.0, h), 3),
+                                         round(s + rng.uniform(-h - 2.0, 2.0), 2), round(rng.uniform(-20.0, 25.0), 2),
+                                         round(rng.uniform(-20.0, s - h), 2), round(rng.uniform(-20.0, s - h), 2)])
+            line = tuning_kw["room_target"] + tuning_kw["warm_stop_margin"]
+            hy = tuning_kw["warm_stop_hysteresis"]
+            indoor = maybe(rng.choice([line, line - hy, round(line - rng.uniform(0.0, hy), 3),
+                                       round(line + rng.uniform(-hy - 1.0, 1.0), 2), temperature(17.0, 25.0)]), 0.12)
+            flow = maybe(temperature(20.0, 70.0), 0.35)
+            limit = tuning_kw["failsafe_after_seconds"]
+            without = rng.choice([0.0, limit, limit, round(rng.uniform(0.0, 2.0 * limit + 60.0), 1), 1e6])
+        made_loop = loop(**tuning_kw)
+        state = made_loop.state
+        state.summer_stopped, state.warm_stopped = summer_before, warm_before
+        state.seconds_without_flow = without
+        before = {"summer_stopped": summer_before, "warm_stopped": warm_before}
+        mode = made_loop._mode(m.ControlInputs(dt=30.0, heating_enabled=enabled, flow=flow), outdoor_summer, indoor)
+        after = {"summer_stopped": state.summer_stopped, "warm_stopped": state.warm_stopped}
+        branch(counts, "mode_" + mode)
+        s, h = tuning_kw["summer_outdoor"], tuning_kw["summer_hysteresis"]
+        if enabled:
+            branch(counts, f"summer_{str(summer_before).lower()}_to_{str(after['summer_stopped']).lower()}")
+            if s - h <= outdoor_summer < s:
+                branch(counts, "summer_band_" + ("kept" if summer_before else "not_entered"))
+            if not after["summer_stopped"]:
+                if indoor is None:
+                    branch(counts, f"warm_none_{str(warm_before).lower()}")
+                else:
+                    branch(counts, f"warm_{str(warm_before).lower()}_to_{str(after['warm_stopped']).lower()}")
+                    line = tuning_kw["room_target"] + tuning_kw["warm_stop_margin"]
+                    low = line - tuning_kw["warm_stop_hysteresis"]
+                    if low <= indoor <= line:
+                        branch(counts, "warm_band_" + ("kept" if warm_before else "not_entered"))
+                if mode in (c.MODE_FAILSAFE, c.MODE_HOLD) and without == tuning_kw["failsafe_after_seconds"]:
+                    branch(counts, "failsafe_at_limit")
+        rows.append([_stored(dict(tuning_kw)), _stored(before), _bool(enabled), outdoor_summer, indoor, flow, without,
+                     mode, _stored(after)])
+    write(step, "mode.csv", ["tuning", "before", "heating_enabled", "outdoor_summer", "indoor", "flow",
+                             "seconds_without_flow", "mode", "after"], rows)
+    show("mode.csv", counts)
+
+    # --- _cold_boiler_cap: avstängd (band <= 0), inget att räkna på, över bandet (precis på också),
+    # under taket (golvet), linjen emellan, och ett golv utanför 0-100.
+    fixed = [
+        # (band, clearance, floor, boiler, limit)
+        (10.0, 2.0, 10.0, 72.0, 60.0), (10.0, 2.0, 10.0, 71.99, 60.0), (10.0, 2.0, 10.0, 62.0, 60.0),
+        (10.0, 2.0, 10.0, 67.0, 60.0), (10.0, 2.0, 10.0, 55.0, 60.0), (10.0, 2.0, 10.0, None, 60.0),
+        (10.0, 2.0, 10.0, 70.0, None), (0.0, 2.0, 10.0, 55.0, 60.0), (-1.0, 2.0, 10.0, 55.0, 60.0),
+        (10.0, 2.0, -5.0, 55.0, 60.0), (10.0, 2.0, 120.0, 55.0, 60.0), (10.0, 2.0, 0.0, 67.0, 60.0),
+        (10.0, 2.0, 100.0, 67.0, 60.0), (10.0, 0.0, 10.0, 60.0, 60.0),
+    ]
+    counts = {}
+    rows = []
+    for i in range(400):
+        if i < len(fixed):
+            band, clearance, floor, boiler, limit = fixed[i]
+        else:
+            band = rng.choice([10.0, 10.0, 10.0, 0.0, -1.0, round(rng.uniform(0.5, 20.0), 2)])
+            clearance = rng.choice([2.0, 2.0, 0.0, round(rng.uniform(-2.0, 5.0), 2)])
+            floor = rng.choice([10.0, 10.0, 0.0, -5.0, 120.0, 100.0, round(rng.uniform(0.0, 100.0), 1)])
+            limit = maybe(rng.choice([60.0, 65.0, round(rng.uniform(40.0, 80.0), 1)]), 0.08)
+            if limit is None:
+                boiler = maybe(temperature(20.0, 95.0), 0.1)
+            else:
+                start = limit + clearance
+                boiler = maybe(rng.choice([start + band, start, round(start + rng.uniform(-5.0, band + 5.0), 2),
+                                           round(start + rng.uniform(0.0, band), 3), temperature(20.0, 95.0)]), 0.08)
+        made_loop = loop(cold_boiler_band=band, cold_boiler_clearance=clearance, cold_boiler_floor=floor)
+        cap = made_loop._cold_boiler_cap(m.ControlInputs(dt=30.0, boiler=boiler, boiler_limit=limit))
+        if band <= 0.0:
+            branch(counts, "none_band")
+        elif boiler is None or limit is None:
+            branch(counts, "none_missing")
+        else:
+            over = float(boiler) - float(limit) - clearance
+            if over == band:
+                branch(counts, "over_exactly_band")
+            if over >= band:
+                branch(counts, "none_over_band")
+            elif over <= 0.0:
+                branch(counts, "floor" + ("_below_zero" if over < 0.0 else "_at_zero"))
+            else:
+                branch(counts, "line")
+            if over < band:
+                if floor < 0.0 or floor > 100.0:
+                    branch(counts, "floor_outside")
+                elif floor == 0.0:
+                    branch(counts, "floor_zero")
+        rows.append([band, clearance, floor, boiler, limit, cap])
+    write(step, "cold_boiler_cap.csv", ["cold_boiler_band", "cold_boiler_clearance", "cold_boiler_floor", "boiler",
+                                        "boiler_limit", "cap"], rows)
+    show("cold_boiler_cap.csv", counts)
+
+    # --- _boiler_overheated: slår till vid boiler_max, släpper vid release, hålls emellan och
+    # genom en saknad givare.
+    fixed = [
+        (95.0, 85.0, False, 95.0), (95.0, 85.0, False, 94.99), (95.0, 85.0, True, 85.0), (95.0, 85.0, True, 85.01),
+        (95.0, 85.0, True, 90.0), (95.0, 85.0, False, 90.0), (95.0, 85.0, True, None), (95.0, 85.0, False, None),
+        (85.0, 95.0, True, 90.0), (85.0, 95.0, False, 90.0),
+    ]
+    counts = {}
+    rows = []
+    for i in range(300):
+        if i < len(fixed):
+            high, release, before, boiler = fixed[i]
+        else:
+            high = rng.choice([95.0, 95.0, round(rng.uniform(70.0, 100.0), 1)])
+            release = rng.choice([85.0, 85.0, high, round(rng.uniform(60.0, high), 1), round(rng.uniform(60.0, 105.0), 1)])
+            before = rng.random() < 0.5
+            low, top = min(high, release), max(high, release)
+            boiler = maybe(rng.choice([high, release, round(rng.uniform(low, top), 2), round(rng.uniform(low, top), 2),
+                                       temperature(50.0, 105.0)]), 0.15)
+        made_loop = loop(boiler_max=high, boiler_max_release=release)
+        made_loop.state.boiler_overheated = before
+        result = made_loop._boiler_overheated(boiler)
+        if boiler is None:
+            branch(counts, f"none_{str(before).lower()}")
+        elif boiler >= high:
+            branch(counts, "trip" + ("_exact" if boiler == high else ""))
+        elif boiler <= release:
+            branch(counts, "release" + ("_exact" if boiler == release else ""))
+        else:
+            branch(counts, f"held_{str(before).lower()}")
+        rows.append([high, release, _bool(before), boiler, _bool(result)])
+    write(step, "boiler_overheated.csv", ["boiler_max", "boiler_max_release", "before", "boiler", "result"], rows)
+    show("boiler_overheated.csv", counts)
+
+    # --- _heat_source och _burner_for_heating.
+    source_fields = ["heat_source_off_in_summer", "heat_source_off_when_idle", "heat_source_off_when_disabled",
+                     "heat_source_off_delay"]
+    defaults = {name: getattr(m.Tuning(), name) for name in source_fields}
+    modes = [c.MODE_OFF, c.MODE_SUMMER, c.MODE_WARM, c.MODE_HEATING, c.MODE_HOLD, c.MODE_FAILSAFE, c.MODE_COAST,
+             c.MODE_EMERGENCY]
+    stopped_modes = (c.MODE_OFF, c.MODE_SUMMER, c.MODE_WARM, c.MODE_COAST)
+
+    def source_tuning():
+        return dict(
+            heat_source_off_in_summer=rng.random() < 0.6,
+            heat_source_off_when_idle=rng.random() < 0.5,
+            heat_source_off_when_disabled=rng.random() < 0.6,
+            heat_source_off_delay=rng.choice([1800.0, 1800.0, 0.0, round(rng.uniform(0.0, 3600.0), 1)]),
+        )
+
+    def may_switch_off(tuning_kw, mode):
+        return ((mode == c.MODE_SUMMER and tuning_kw["heat_source_off_in_summer"])
+                or (mode == c.MODE_WARM and tuning_kw["heat_source_off_when_idle"])
+                or (mode == c.MODE_OFF and tuning_kw["heat_source_off_when_disabled"]))
+
+    idle = dict(defaults, heat_source_off_when_idle=True)
+    fixed = [
+        # (tuning, seconds_stopped, overheated, mode, dt, hot_water, sweeping, coast_burner)
+        (defaults, 0.0, True, c.MODE_HEATING, 30.0, True, True, False),
+        (defaults, 0.0, False, c.MODE_HEATING, 30.0, True, True, False),
+        (defaults, 0.0, False, c.MODE_HEATING, 30.0, True, False, False),
+        (defaults, 1e6, False, c.MODE_SUMMER, 30.0, True, False, False),
+        (defaults, 1770.0, False, c.MODE_SUMMER, 30.0, False, False, False),
+        (defaults, 1769.0, False, c.MODE_SUMMER, 30.0, False, False, False),
+        (defaults, 1771.0, False, c.MODE_SUMMER, 30.0, False, False, False),
+        (defaults, 1e6, False, c.MODE_WARM, 30.0, False, False, False),
+        (idle, 1e6, False, c.MODE_WARM, 30.0, False, False, False),
+        (defaults, 0.0, False, c.MODE_WARM, 30.0, False, False, True),
+        (defaults, 0.0, False, c.MODE_WARM, 30.0, True, False, True),
+        (defaults, 0.0, False, c.MODE_COAST, 30.0, False, False, True),
+        (defaults, 0.0, False, c.MODE_COAST, 30.0, False, False, False),
+        (defaults, 0.0, False, c.MODE_COAST, 30.0, True, False, True),
+        (dict(defaults, heat_source_off_when_disabled=False), 1e6, False, c.MODE_OFF, 30.0, False, False, False),
+        (defaults, 1e6, False, c.MODE_OFF, 30.0, False, False, False),
+        (dict(defaults, heat_source_off_in_summer=False), 1e6, False, c.MODE_SUMMER, 30.0, False, False, False),
+        (defaults, 1e6, False, c.MODE_EMERGENCY, 30.0, False, False, False),
+        (defaults, 1e6, False, c.MODE_FAILSAFE, 30.0, False, False, False),
+        (dict(defaults, heat_source_off_delay=0.0), 0.0, False, c.MODE_SUMMER, 0.0, False, False, False),
+    ]
+    counts = {}
+    rows = []
+    for i in range(800):
+        if i < len(fixed):
+            tuning_kw, before, overheated, mode, dt, hot_water, sweeping, coast_burner = fixed[i]
+        else:
+            tuning_kw = source_tuning()
+            dt = a_dt()
+            delay = tuning_kw["heat_source_off_delay"]
+            before = rng.choice([0.0, delay, delay - dt, delay - dt, round(rng.uniform(0.0, 2.0 * delay + 60.0), 1), 1e6])
+            overheated, sweeping = rng.random() < 0.1, rng.random() < 0.1
+            hot_water, coast_burner = rng.random() < 0.25, rng.random() < 0.35
+            mode = rng.choice(modes)
+        made_loop = loop(**tuning_kw)
+        state = made_loop.state
+        state.seconds_stopped = before
+        state.boiler_overheated = overheated
+        out = m.ControlOutput()
+        out.coast_burner = coast_burner
+        result = made_loop._heat_source(mode, dt, hot_water, out, sweeping)
+        stopped = mode in stopped_modes
+        if overheated:
+            branch(counts, "overheat")
+        elif sweeping:
+            branch(counts, "sweep")
+        else:
+            if hot_water:
+                branch(counts, f"hot_water_for_{str(out.burner_for_hot_water).lower()}")
+            if mode == c.MODE_WARM and coast_burner:
+                branch(counts, "warm_coast_burner" + ("_hot_water" if hot_water else ""))
+            elif mode == c.MODE_COAST:
+                branch(counts, f"coast_{str(not coast_burner).lower()}")
+            elif not stopped:
+                branch(counts, "running")
+            elif not may_switch_off(tuning_kw, mode):
+                branch(counts, f"kept_on_{mode}")
+            else:
+                after = state.seconds_stopped
+                branch(counts, f"may_off_{mode}_" + ("waiting" if after < tuning_kw["heat_source_off_delay"] else "off"))
+                if after == tuning_kw["heat_source_off_delay"]:
+                    branch(counts, "at_delay")
+                elif before < tuning_kw["heat_source_off_delay"] < after:
+                    branch(counts, "crossed_delay")
+        rows.append([_stored(dict(tuning_kw)), before, _bool(overheated), mode, dt, _bool(hot_water), _bool(sweeping),
+                     _bool(coast_burner), _bool(result), _bool(out.burner_for_hot_water), "|".join(out.flags),
+                     state.seconds_stopped])
+    write(step, "heat_source.csv", ["tuning", "seconds_stopped_before", "boiler_overheated", "mode", "dt", "hot_water",
+                                    "sweeping", "coast_burner", "result", "burner_for_hot_water", "flags",
+                                    "seconds_stopped_after"], rows)
+    show("heat_source.csv", counts)
+
+    # _burner_for_heating får stopped som argument, så också fall där det inte stämmer med läget.
+    fixed = [
+        (defaults, 1800.0, c.MODE_SUMMER, False, True), (defaults, 1799.0, c.MODE_SUMMER, False, True),
+        (defaults, 1e6, c.MODE_HEATING, False, True), (defaults, 1e6, c.MODE_SUMMER, False, False),
+        (defaults, 0.0, c.MODE_COAST, True, False), (defaults, 0.0, c.MODE_COAST, False, True),
+        (defaults, 0.0, c.MODE_WARM, True, True), (defaults, 1e6, c.MODE_WARM, False, True),
+        (idle, 1e6, c.MODE_WARM, False, True), (defaults, 1e6, c.MODE_OFF, False, True),
+    ]
+    counts = {}
+    rows = []
+    for i in range(400):
+        if i < len(fixed):
+            tuning_kw, seconds, mode, coast_burner, stopped = fixed[i]
+        else:
+            tuning_kw = source_tuning()
+            delay = tuning_kw["heat_source_off_delay"]
+            seconds = rng.choice([0.0, delay, delay, round(rng.uniform(0.0, 2.0 * delay + 60.0), 1), 1e6])
+            mode = rng.choice(modes)
+            coast_burner, stopped = rng.random() < 0.35, rng.random() < 0.6
+        made_loop = loop(**tuning_kw)
+        made_loop.state.seconds_stopped = seconds
+        out = m.ControlOutput()
+        out.coast_burner = coast_burner
+        result = made_loop._burner_for_heating(mode, out, stopped)
+        if mode == c.MODE_COAST:
+            branch(counts, f"coast_{str(result).lower()}")
+        elif not stopped:
+            branch(counts, "not_stopped" + ("_but_stop_mode" if mode in stopped_modes else ""))
+        elif mode == c.MODE_WARM and coast_burner:
+            branch(counts, "warm_coast_burner")
+        elif not may_switch_off(tuning_kw, mode):
+            branch(counts, "kept_on" + ("_running_mode" if mode not in stopped_modes else ""))
+        else:
+            branch(counts, f"may_off_{str(result).lower()}" + ("_at_delay" if seconds == tuning_kw["heat_source_off_delay"]
+                                                                 else ""))
+        rows.append([_stored(dict(tuning_kw)), seconds, mode, _bool(coast_burner), _bool(stopped), _bool(result)])
+    write(step, "burner_for_heating.csv", ["tuning", "seconds_stopped", "mode", "coast_burner", "stopped", "result"],
+          rows)
+    show("burner_for_heating.csv", counts)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -2596,6 +2923,7 @@ def main() -> int:
     controller(core, rng)  # sist: stegen före får samma slumptal som förut
     cycle_start(core, rng)
     delta_and_radiators(core, rng)
+    mode_and_heat_source(core, rng)
     for step, *modules in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
                            ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
                            ("06-skattarna", "estimators"), ("07-husmodellen", "thermal"),
@@ -2603,7 +2931,8 @@ def main() -> int:
                            ("10-brannaren", "burner"), ("11-modellen", "model", "parsing", "sunterm"),
                            ("12-grunden", "controller", "texts"),
                            ("13-ute-inne-kurvan", "controller"),
-                           ("14-deltat-radiatorvakten", "controller")):
+                           ("14-deltat-radiatorvakten", "controller"),
+                           ("15-laget-varmekallan", "controller")):
         for module in modules:
             copy_source(heating, step, module)
     return 0
