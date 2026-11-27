@@ -611,26 +611,136 @@ public class HeatingController {
     // --- Steg 15: läget och värmekällan -----------------------------------------------------------
 
     String mode(ControlInputs inputs, double outdoorSummer, Double indoor) {
-        return null;
+
+        if (!inputs.heatingEnabled) {
+            state.summerStopped = false;
+            state.warmStopped = false;
+            return MODE_OFF;
+        }
+
+        if (state.summerStopped) {
+            if (outdoorSummer < tuning.summerOutdoor - tuning.summerHysteresis) {
+                state.summerStopped = false;
+            }
+        } else if (outdoorSummer >= tuning.summerOutdoor) {
+                state.summerStopped = true;
+        }
+
+        if (state.summerStopped) {
+            return MODE_SUMMER;
+        }
+
+        if (indoor == null) {
+            state.warmStopped = false;
+        } else if (state.warmStopped) {
+            if (indoor < tuning.roomTarget + tuning.warmStopMargin - tuning.warmStopHysteresis) {
+                state.warmStopped = false;
+            }
+        } else if (indoor > tuning.roomTarget + tuning.warmStopMargin) {
+            state.warmStopped = true;
+        }
+
+        if (state.warmStopped) {
+            return MODE_WARM;
+        }
+
+        if (inputs.flow == null) {
+            if (state.secondsWithoutFlow >= tuning.failsafeAfterSeconds) {
+                return MODE_FAILSAFE;
+            }
+            return MODE_HOLD;
+        }
+
+        return MODE_HEATING;
     }                   // vilket stopp som gäller, om något: MODE_OFF, MODE_SUMMER (dygnssnittet med hysteres), MODE_WARM (inne över mål + marginal, med hysteres), MODE_FAILSAFE/MODE_HOLD utan tilloppsgivare, annars MODE_HEATING
 
     Double coldBoilerCap(ControlInputs inputs) {
-        return null;
+
+        if (tuning.coldBoilerBand <= 0.0 || inputs.boiler == null || inputs.boilerLimit == null) {
+            return null;
+        }
+
+        double over = inputs.boiler - inputs.boilerLimit - tuning.coldBoilerClearance;
+        if (over >= tuning.coldBoilerBand) {
+            return null;
+        }
+
+        double floor = clamp(tuning.coldBoilerFloor, 0.0, 100.0);
+
+        return floor + (100.0 - floor) * clamp(over / tuning.coldBoilerBand, 0.0, 1.0);
     }                   // pannskyddet: hur långt ventilen får öppna i procent för pannans skull, null när pannan är varm nog (eller band <= 0, eller boiler/boilerLimit saknas); en linje från coldBoilerFloor till 100 över coldBoilerBand
 
     boolean boilerOverheated(Double boiler) {
-        return false;
+
+        if (boiler != null) {
+            if (boiler >= tuning.boilerMax) {
+                state.boilerOverheated = true;
+            } else if (boiler <= tuning.boilerMaxRelease) {
+                state.boilerOverheated = false;
+            }
+        }
+
+        return state.boilerOverheated;
     }                   // för het för brännaren: slår till vid boilerMax, släpper vid boilerMaxRelease, hålls genom en saknad mätning
 
     boolean heatSource(String mode, double dt, boolean hotWater, ControlOutput out) {
-        return false;
+        return heatSource(mode, dt, hotWater, out, false);
     }                   // Pythons _heat_source med sweeping False
 
     boolean heatSource(String mode, double dt, boolean hotWater, ControlOutput out, boolean sweeping) {
-        return false;
+
+        boolean stopped = MODES_STOPPED.contains(mode);
+        if (stopped) {
+            state.secondsStopped += dt;
+        } else {
+            state.secondsStopped = 0.0;
+        }
+
+        if (state.boilerOverheated) {
+            out.flags.add("boiler_overheat");
+            return false;
+        }
+
+        if (sweeping) {
+            out.flags.add("sweeping");
+            return false;
+        }
+
+        if (hotWater) {
+            out.flags.add("hot_water");
+            out.burnerForHotWater = !burnerForHeating(mode, out, stopped);
+            return true;
+        }
+
+        if (MODE_WARM.equals(mode) && out.coastBurner) {
+            out.flags.add("coast_burner");
+        }
+
+        return burnerForHeating(mode, out, stopped);
     }                   // ska brännaren gå: secondsStopped räknas i stoppade lägen; överhettad panna ("boiler_overheat") och sotning ("sweeping") går före allt, varmvattnet ("hot_water") före varje stopp, sedan burnerForHeating
 
     boolean burnerForHeating(String mode, ControlOutput out, boolean stopped) {
-        return false;
+
+        if (MODE_COAST.equals(mode)) {
+            return !out.coastBurner;
+        }
+
+        if (!stopped) {
+            return true;
+        }
+
+        if (MODE_WARM.equals(mode) && out.coastBurner) {
+            return false;
+        }
+
+        boolean maySwitchOff = (MODE_SUMMER.equals(mode) && tuning.heatSourceOffInSummer)
+                || (MODE_WARM.equals(mode) && tuning.heatSourceOffWhenIdle)
+                || (MODE_OFF.equals(mode) && tuning.heatSourceOffWhenDisabled);
+
+        if (!maySwitchOff) {
+            return true;
+        }
+
+        return state.secondsStopped < tuning.heatSourceOffDelay;
     }                   // vill radiatorerna ha brännaren, varmvattnet oräknat: coast = inte coastBurner; inte stoppat = ja; varm med coastBurner = nej; får stängas av enligt inställningen för läget, och först efter heatSourceOffDelay
 }
