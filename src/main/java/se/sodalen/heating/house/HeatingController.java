@@ -3,7 +3,6 @@ package se.sodalen.heating.house;
 import se.sodalen.heating.curve.Curve;
 import se.sodalen.heating.curve.CurveFit;
 import se.sodalen.heating.curve.PointTable;
-import se.sodalen.heating.estimate.DutyWatch;
 import se.sodalen.heating.estimate.Ewma;
 import se.sodalen.heating.forecast.Ensemble;
 import se.sodalen.heating.forecast.Forecasts;
@@ -12,6 +11,7 @@ import se.sodalen.heating.valve.ValveMap;
 import java.util.*;
 
 import static se.sodalen.heating.house.Model.*;
+import static se.sodalen.heating.house.Thermal.radiatorExcess;
 import static se.sodalen.heating.house.Thermal.solarIndex;
 
 // Den yttre slingan: vilken tilloppstemperatur huset vill ha just nu (controller.py). Kaskadreglering,
@@ -623,7 +623,7 @@ public class HeatingController {
                 state.summerStopped = false;
             }
         } else if (outdoorSummer >= tuning.summerOutdoor) {
-                state.summerStopped = true;
+            state.summerStopped = true;
         }
 
         if (state.summerStopped) {
@@ -747,25 +747,202 @@ public class HeatingController {
     // --- Steg 16: utrullningen ---------------------------------------------------------------------
 
     String coast(ControlInputs inputs, Double indoor, String mode, ControlOutput out) {
-        return null;
+
+        if (!tuning.coastEnabled || indoor == null || inputs.forecast == null || inputs.forecast.isEmpty()) {
+            state.coasting = false;
+            return mode;
+        }
+
+        List<Forecast> weather = new ArrayList<>();
+        for (Forecast forecast : inputs.forecast) {
+            if (forecast.hours() <= tuning.coastHorizonHours) {
+                weather.add(forecast);
+            }
+        }
+
+        if (weather.isEmpty()) {
+            return mode;
+        }
+
+        String why = distrust();
+        out.coastTrust = why;
+        if (!why.isEmpty()) {
+            state.coasting = false;
+            out.coastAllowance = tuning.coastLearningBand;
+            out.coastMargin = Math.max(tuning.coastComfortBand, tuning.coastLearningBand);
+            return mode;
+        }
+
+        double spread = house.driftUncertainty(indoor, weather.getFirst().conditions());
+        Double reach = house.reach(indoor, weather.getFirst().conditions());
+        double allowance = 0.0;
+        if (reach == null) {
+            allowance = tuning.coastLearningBand;
+        } else if (tuning.coastUnknownReach > 0.0) {
+            double share = Math.min(1.0, Math.max(0.0, reach) / tuning.coastUnknownReach);
+            allowance = tuning.coastLearningBand * share;
+        }
+
+        out.coastUncertainty = spread;
+        out.coastReach = reach;
+        out.coastAllowance = allowance;
+
+        double margin = Math.max(tuning.coastComfortBand, allowance);
+        out.coastMargin = margin;
+
+        Outlook outlook = house.outlook(
+                indoor,
+                tuning.roomTarget - margin,
+                weather,
+                tuning.coastConfidence
+        );
+
+        out.coastKnown = outlook.known();
+        out.coastHours = outlook.hours();
+
+        if (!outlook.known()) {
+            state.coasting = false;
+            return mode;
+        }
+
+        double held = outlook.holds() ? Double.POSITIVE_INFINITY : (outlook.hours() != null ? outlook.hours() : 0.0);
+
+        double lead = tuning.shuntLeadSeconds;
+        double needed = state.coasting ? lead : lead + tuning.coastHysteresisSeconds;
+        out.coastShuntThreshold = needed / 3600.0;
+        out.coastTurnHours = outlook.turnsAt();
+
+        boolean bridges = outlook.turnsAt() != null || !tuning.coastBridgeOnly;
+        out.coastShunt = bridges && held > needed / 3600;
+
+        double burnerCost = burnerLeadSeconds() + tuning.heatSourceOffDelay;
+        if (!state.coasting) {
+            burnerCost += tuning.coastHysteresisSeconds;
+        }
+        out.coastBurnerThreshold = burnerCost / 3600.0;
+        out.coastBurner = held > burnerCost / 3600.0;
+
+        if (!MODE_HEATING.equals(mode)) {
+            state.coasting = false;
+            return mode;
+        }
+
+        boolean may = state.coasting
+                || (indoor >= tuning.roomTarget
+                && !(out.coastShunt && learningHold(inputs, out)));
+
+        state.coasting = out.coastShunt && may;
+        if (state.coasting) {
+            out.flags.add("coast");
+            return MODE_COAST;
+        }
+
+        return mode;
     }                   // ska huset lämnas att rulla på det det har: en prognos läst på två horisonter (shunten och brännaren); räknas ut i varje läge, men bara från heating blir svaret MODE_COAST, annars mode oförändrat
 
     String distrust() {
-        return null;
+
+        double hours = house.observedHours();
+        double needed = tuning.coastMinHours;
+
+        if (hours < needed) {
+            return String.format("%.0f av %.0f h data", Math.rint(hours), Math.rint(needed));
+        }
+
+        Boolean cools = house.coolsWhenLeftAlone();
+        if (cools == null) {
+            return "för lite data";
+        }
+
+        if (!cools || house.lossOnFloor()) {
+            return "för lite varierad data för att lita på modellen än";
+        }
+
+        return "";
     }                   // varför husmodellen inte får bestämma än, på svenska, eller "" när den får: för få timmar, för lite data, för lite varierad data
 
     boolean learningHold(ControlInputs inputs, ControlOutput out) {
-        return false;
+
+        Double outdoor = state.outdoor.value();
+
+        if (outdoor == null) {
+            return false;
+        }
+
+        double hours = points.hoursAt(outdoor, inputs.hour);
+        if (hours >= tuning.coastLearningCellHours) {
+            return false;
+        }
+
+        if (state.secondsLearningHold >= tuning.coastLearningHoldMaxSeconds) {
+            return false;
+        }
+
+        String cell = points.keyAt(outdoor, inputs.hour);
+        if (!cell.equals(state.learningHoldCell)) {
+            state.learningHoldCell = cell;
+            state.learningHoldBase = hours;
+        }
+
+        double left = tuning.coastLearningHoldSeconds - (hours - state.learningHoldBase) * 3600.0;
+        if (left <= 0.0) {
+            return false;
+        }
+        state.secondsLearningHold += Math.max(0.0, inputs.dt);
+        out.coastLearningHold = left;
+        out.flags.add("learning_hold");
+
+        return true;
     }                   // inlärningsspärren: om ett sparläge som får börja ska vänta på kurvtabellen (coastLearningHoldSeconds); räknar väntan medan den håller
 
     void observeHouse(ControlInputs inputs, Double indoor, Double delta, double dt) {
+
+        Conditions conditions = conditions(inputs);
+        if (indoor == null || conditions == null) {
+            said(LEARN_HOUSE, false, indoor == null ? "no_indoor" : "no_outdoor", null);
+        } else {
+            said(LEARN_HOUSE, true, "", house != null ? house.observedHours() : null);
+        }
+
+        house.observe(
+                indoor,
+                conditions,
+                delta != null ? delta : 0.0,
+                dt,
+                tuning.thermalSampleSeconds,
+                radiatorExcess(inputs.flow, inputs.ret, indoor),
+                night(inputs)
+        );
     }                   // låter husmodellen se cykeln: varje cykel, inte bara de med värmen av; LEARN_HOUSE-utlåtandet före observe
 
     boolean night(ControlInputs inputs) {
-        return false;
+
+        if (inputs.hour == null || inputs.sunElevation == null) {
+            return false;
+        }
+
+        double start = tuning.nightStartHour;
+        double end = tuning.nightEndHour;
+
+        double hour = inputs.hour % 24.0;
+        if (hour < 0.0) {
+            hour += 24.0;
+        }
+
+        boolean inWindow = start < end ? start <= hour && hour < end : (hour >= start || hour < end);
+
+        return (inWindow
+                && inputs.sunElevation <= 0.0
+                && state.secondsSinceSun >= tuning.learnAfterSunSeconds
+        );
     }                   // natt för husmodellens nattbalans: i fönstret nightStartHour-nightEndHour, solen nere och huset förbi solens värme; inte utan klocka eller sol
 
     Conditions conditions(ControlInputs inputs) {
-        return null;
+
+        if (inputs.outdoor == null) {
+            return null;
+        }
+
+        return new Conditions(inputs.outdoor, inputs.wind, inputs.windBearing, sunlightNow(inputs), inputs.hour);
     }                   // vädret nu som modellen vill ha det, med sunlightNow och klockan; null utan utegivare
 }
