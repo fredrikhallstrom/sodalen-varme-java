@@ -743,4 +743,29 @@ public class HeatingController {
 
         return state.secondsStopped < tuning.heatSourceOffDelay;
     }                   // vill radiatorerna ha brännaren, varmvattnet oräknat: coast = inte coastBurner; inte stoppat = ja; varm med coastBurner = nej; får stängas av enligt inställningen för läget, och först efter heatSourceOffDelay
+
+    // --- Steg 16: utrullningen ---------------------------------------------------------------------
+
+    String coast(ControlInputs inputs, Double indoor, String mode, ControlOutput out) {
+        return null;
+    }                   // ska huset lämnas att rulla på det det har: en prognos läst på två horisonter (shunten och brännaren); räknas ut i varje läge, men bara från heating blir svaret MODE_COAST, annars mode oförändrat
+
+    String distrust() {
+        return null;
+    }                   // varför husmodellen inte får bestämma än, på svenska, eller "" när den får: för få timmar, för lite data, för lite varierad data
+
+    boolean learningHold(ControlInputs inputs, ControlOutput out) {
+        return false;
+    }                   // inlärningsspärren: om ett sparläge som får börja ska vänta på kurvtabellen (coastLearningHoldSeconds); räknar väntan medan den håller
+
+    void observeHouse(ControlInputs inputs, Double indoor, Double delta, double dt) {
+    }                   // låter husmodellen se cykeln: varje cykel, inte bara de med värmen av; LEARN_HOUSE-utlåtandet före observe
+
+    boolean night(ControlInputs inputs) {
+        return false;
+    }                   // natt för husmodellens nattbalans: i fönstret nightStartHour-nightEndHour, solen nere och huset förbi solens värme; inte utan klocka eller sol
+
+    Conditions conditions(ControlInputs inputs) {
+        return null;
+    }                   // vädret nu som modellen vill ha det, med sunlightNow och klockan; null utan utegivare
 }

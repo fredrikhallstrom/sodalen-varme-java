@@ -1,0 +1,85 @@
+house;coast_min_hours;result
+lard;48.0;
+lard;47.5;
+lard;48.5;
+lard;0.0;
+lard;12.0;
+lard;12.5;
+lard;13.0;
+lard;13.5;
+lard;24.0;
+lard;600.0;600 av 600 h data
+lard;600.5;600 av 600 h data
+lard;1000.0;600 av 1000 h data
+brus;48.0;
+brus;47.5;
+brus;48.5;
+brus;0.0;
+brus;12.0;
+brus;12.5;
+brus;13.0;
+brus;13.5;
+brus;24.0;
+brus;600.0;72 av 600 h data
+brus;600.5;72 av 600 h data
+brus;1000.0;72 av 1000 h data
+kort;48.0;24 av 48 h data
+kort;47.5;24 av 48 h data
+kort;48.5;24 av 48 h data
+kort;0.0;
+kort;12.0;
+kort;12.5;
+kort;13.0;
+kort;13.5;
+kort;24.0;24 av 24 h data
+kort;600.0;24 av 600 h data
+kort;600.5;24 av 600 h data
+kort;1000.0;24 av 1000 h data
+halv;48.0;12 av 48 h data
+halv;47.5;12 av 48 h data
+halv;48.5;12 av 48 h data
+halv;0.0;
+halv;12.0;
+halv;12.5;
+halv;13.0;12 av 13 h data
+halv;13.5;12 av 14 h data
+halv;24.0;12 av 24 h data
+halv;600.0;12 av 600 h data
+halv;600.5;12 av 600 h data
+halv;1000.0;12 av 1000 h data
+halv3;48.0;14 av 48 h data
+halv3;47.5;14 av 48 h data
+halv3;48.5;14 av 48 h data
+halv3;0.0;
+halv3;12.0;
+halv3;12.5;
+halv3;13.0;
+halv3;13.5;
+halv3;24.0;14 av 24 h data
+halv3;600.0;14 av 600 h data
+halv3;600.5;14 av 600 h data
+halv3;1000.0;14 av 1000 h data
+varm;48.0;för lite varierad data för att lita på modellen än
+varm;47.5;för lite varierad data för att lita på modellen än
+varm;48.5;för lite varierad data för att lita på modellen än
+varm;0.0;för lite varierad data för att lita på modellen än
+varm;12.0;för lite varierad data för att lita på modellen än
+varm;12.5;för lite varierad data för att lita på modellen än
+varm;13.0;för lite varierad data för att lita på modellen än
+varm;13.5;för lite varierad data för att lita på modellen än
+varm;24.0;för lite varierad data för att lita på modellen än
+varm;600.0;för lite varierad data för att lita på modellen än
+varm;600.5;för lite varierad data för att lita på modellen än
+varm;1000.0;720 av 1000 h data
+ny;48.0;0 av 48 h data
+ny;47.5;0 av 48 h data
+ny;48.5;0 av 48 h data
+ny;0.0;för lite data
+ny;12.0;0 av 12 h data
+ny;12.5;0 av 12 h data
+ny;13.0;0 av 13 h data
+ny;13.5;0 av 14 h data
+ny;24.0;0 av 24 h data
+ny;600.0;0 av 600 h data
+ny;600.5;0 av 600 h data
+ny;1000.0;0 av 1000 h data

@@ -2902,6 +2902,487 @@ def mode_and_heat_source(core, rng) -> None:
     show("burner_for_heating.csv", counts)
 
 
+def rollout(core, rng) -> None:
+    """Steg 16, utrullningen: _coast, _distrust, _learning_hold, _observe_house, _night och _conditions."""
+    from weatherhouse import WeatherHouse  # i heating/tests, på sys.path sedan load_core
+    m, c, th = core.model, core.controller, core.thermal
+    Conditions = th.Conditions
+    step = "16-utrullningen"
+
+    def maybe(value, chance=0.2):
+        return None if rng.random() < chance else value
+
+    def temperature(low, high):
+        return round(rng.uniform(low, high), rng.choice([1, 2, 6]))
+
+    def a_dt():
+        return rng.choice([30.0, 30.0, 30.0, 0.0, -30.0, 600.0, round(rng.uniform(1.0, 3600.0), 3)])
+
+    def branch(counts, key):
+        counts[key] = counts.get(key, 0) + 1
+
+    def show(name, counts):
+        print(f"{step}/{name}: " + ", ".join(f"{key} {count}" for key, count in sorted(counts.items())))
+
+    # --- husen: test_coast.py:s taught_house, skriven om här (test_coast kör load() när den importeras)
+    # och med varje observe sparad som steg 7:s op. halv och halv3 tar 1800 s-prov, för med 600 s blir
+    # observed_hours aldrig precis 12.5 eller 13.5 (summan av sjättedelar).
+    def taught_house(hours=24 * 25, noise=0.0, house=None, seconds=600.0):
+        noise_rng = random.Random(4)
+        house = house or WeatherHouse()
+        model, ops = th.HouseModel(), []
+        elapsed = 0.0
+        while elapsed < hours * 3600.0:
+            hour = elapsed / 3600.0
+            outdoor = -5.0 + 10.0 * math.sin(2 * math.pi * hour / 36.0)
+            wind = 3.0 + 3.0 * math.sin(2 * math.pi * hour / 17.0)
+            bearing = (hour * 53.0) % 360.0
+            sun = max(0.0, math.sin(2 * math.pi * (hour % 24) / 24.0 - 1.2)) * 0.8
+            delta = 4.0 if (hour % 24) < 14 else 0.0
+            house.step(seconds / 3600.0, outdoor, wind, bearing, sun, delta)
+            reading = house.indoor + (noise_rng.uniform(-noise, noise) if noise else 0.0)
+            model.observe(indoor=reading, conditions=Conditions(outdoor=outdoor, wind=wind, bearing=bearing, sun=sun),
+                          delta=delta, dt=seconds, sample_seconds=seconds)
+            ops.append("observe," + _floats([reading, outdoor, wind, bearing, sun, None, delta, seconds, seconds, None])
+                       + ",")
+            elapsed += seconds
+        return model, ops
+
+    recipes = {
+        "lard": taught_house(),
+        "brus": taught_house(hours=24 * 3, noise=0.15),
+        "kort": taught_house(hours=24),
+        "halv": taught_house(hours=13.0, seconds=1800.0),
+        "halv3": taught_house(hours=14.0, seconds=1800.0),
+        "varm": taught_house(hours=24 * 30, seconds=1800.0,
+                             house=WeatherHouse(g0=0.001, g_wind=0.0, g_north=0.0, internal=1.2)),
+    }
+    write(step, "coast_houses.csv", ["name", "ops"], [[name, "|".join(ops)] for name, (_, ops) in recipes.items()])
+    houses = {name: model for name, (model, _) in recipes.items()}
+    houses["ny"] = th.HouseModel()
+    names = list(houses)
+    for name in names:
+        made_loop = c.HeatingController(m.Tuning(), m.LearnedState(), house=houses[name])
+        print(f"{step}/hus {name}: observed_hours {houses[name].observed_hours!r}, "
+              f"cools {houses[name].cools_when_left_alone()}, floor {houses[name].loss_on_floor()}, "
+              f"_distrust() {made_loop._distrust()!r}")
+    assert houses["halv"].observed_hours == 12.5 and houses["halv3"].observed_hours == 13.5
+    assert houses["varm"].cools_when_left_alone() is False or houses["varm"].loss_on_floor()
+
+    def table_ops(outdoor, hour, cell_hours):
+        """Kurvtabellen som (ute, behov, vind, klocka, timmar): tom, slumpad, och ibland timmar i
+        just den cell som (ute, klocka) hamnar i - under, på och över cell_hours."""
+        if rng.random() < 0.3:
+            return []
+        entries = []
+        for _ in range(rng.randint(0, 4)):
+            entries.append((temperature(-25.0, 15.0), round(rng.uniform(0.0, 30.0), 2), maybe(round(rng.uniform(0.0, 10.0), 1)),
+                            maybe(round(rng.uniform(0.0, 24.0), 2)), rng.choice([0.5, 1.0, round(rng.uniform(0.0, 4.0), 2)])))
+        if outdoor is not None and rng.random() < 0.7:
+            total = rng.choice([cell_hours, cell_hours - 0.5, cell_hours + 0.5, 0.5, round(rng.uniform(0.0, cell_hours + 2.0), 2)])
+            first = round(total / 2.0, 2) if rng.random() < 0.35 else total
+            for hours in ([first, total - first] if first != total else [total]):
+                entries.append((outdoor, round(rng.uniform(0.0, 30.0), 2), maybe(round(rng.uniform(0.0, 10.0), 1)),
+                                hour, hours))
+        if rng.random() < 0.05:
+            entries.append((temperature(-25.0, 15.0), 5.0, None, None, 0.0))  # timmar 0: läggs inte till
+        rng.shuffle(entries)
+        return entries
+
+    def a_table(entries):
+        table = core.points.PointTable()
+        for outdoor, need, wind, hour, hours in entries:
+            table.add(outdoor=outdoor, need=need, wind=wind, hour=hour, hours=hours)
+        return table
+
+    def table_cell(entries):
+        return "/".join(":".join(_num(v) for v in entry) for entry in entries)
+
+    def hold_before(outdoor, hour, tuning_kw, points):
+        """Väntans tillstånd före: noll, på maxtiden, strax under, slump; cellen ingen, samma eller en annan."""
+        top = tuning_kw["coast_learning_hold_max_seconds"]
+        seconds = rng.choice([0.0, 0.0, top, max(0.0, top - 30.0), round(rng.uniform(0.0, top + 600.0), 1)])
+        same = None if outdoor is None else points.key_at(outdoor, hour)
+        other = points.key_at(temperature(-25.0, 15.0), maybe(round(rng.uniform(0.0, 24.0), 2)))
+        cell = rng.choice([None, None, same, same, same, other])
+        hours = 0.0 if outdoor is None else points.hours_at(outdoor, hour)
+        base = rng.choice([0.0, hours, hours - tuning_kw["coast_learning_hold_seconds"] / 3600.0,
+                           round(hours - rng.uniform(0.0, 4.0), 2), round(rng.uniform(0.0, 8.0), 2)])
+        return seconds, cell, base
+
+    def an_hour():
+        return maybe(rng.choice([round(rng.uniform(0.0, 24.0), 2), round(rng.uniform(0.0, 24.0), 2), 0.0, 23.99, 8.0,
+                                 16.0, round(rng.uniform(-24.0, 48.0), 2)]), 0.25)
+
+    # --- _coast
+    coast_modes = [c.MODE_HEATING] * 7 + [c.MODE_WARM, c.MODE_SUMMER, c.MODE_OFF, c.MODE_COAST, c.MODE_HOLD,
+                                          c.MODE_FAILSAFE]
+
+    def flat_forecast(outdoor, hours=12, wind=0.0, bearing=0.0, sun=0.0):
+        return [(float(h), Conditions(outdoor=outdoor, wind=wind, bearing=bearing, sun=sun)) for h in range(hours + 1)]
+
+    def turning_forecast(cold=8.0, warm=16.0, at=2, hours=12):
+        return [(float(h), Conditions(outdoor=cold if h < at else warm, wind=0.0, bearing=0.0,
+                                      sun=0.0 if h < at else 0.7)) for h in range(hours + 1)]
+
+    def a_forecast(outdoor, horizon):
+        kind = rng.choice(["empty", "flat", "flat", "flat", "turning", "turning", "slots", "slots", "beyond",
+                           "beyond_only", "zero"])
+        base = outdoor if outdoor is not None and rng.random() < 0.6 else temperature(-20.0, 12.0)
+        if kind == "empty":
+            return kind, []
+        if kind == "flat":
+            return kind, flat_forecast(base, rng.choice([12, 12, 6, 24, rng.randint(1, 30)]),
+                                       wind=rng.choice([0.0, 0.0, round(rng.uniform(0.0, 10.0), 1)]),
+                                       bearing=rng.choice([0.0, round(rng.uniform(0.0, 360.0), 1)]),
+                                       sun=rng.choice([0.0, 0.0, round(rng.uniform(0.0, 1.0), 2)]))
+        if kind == "turning":
+            return kind, turning_forecast(cold=base, warm=round(base + rng.uniform(2.0, 20.0), 1),
+                                          at=rng.randint(0, 12), hours=rng.choice([12, 12, 6, 24]))
+        if kind == "zero":
+            return kind, [(rng.choice([0.0, -1.0]), Conditions(outdoor=base, wind=0.0, bearing=0.0, sun=0.0))]
+        count = rng.randint(1, 13)
+        first = rng.choice([0.0, 0.0, 1.0, 0.5])
+        if kind == "beyond_only":
+            first = horizon + rng.choice([0.5, 1.0, round(rng.uniform(0.01, 12.0), 2)])
+        span = rng.uniform(first + 1.0, first + 24.0)
+        clock = maybe(round(rng.uniform(0.0, 24.0), 2), 0.5)
+        slots = []
+        for i in range(count):
+            offset = round(first + (span - first) * i / max(1, count - 1), 2)
+            when = None if clock is None else round((clock + offset) % 24.0, 2)
+            slots.append((offset, Conditions(outdoor=round(base + rng.uniform(-4.0, 6.0), 1),
+                                             wind=maybe(round(rng.uniform(0.0, 12.0), 1)),
+                                             bearing=maybe(round(rng.uniform(0.0, 360.0), 1)),
+                                             sun=rng.choice([0.0, round(rng.uniform(0.0, 1.0), 2)]), hour=when)))
+        if kind == "beyond":
+            slots.append((horizon + round(rng.uniform(0.5, 6.0), 2), Conditions(outdoor=base, wind=None, bearing=None,
+                                                                              sun=0.0)))
+        return kind, slots
+
+    def coast_tuning(house):
+        return dict(
+            coast_enabled=rng.random() < 0.93,
+            coast_horizon_hours=rng.choice([12.0, 12.0, 12.0, 6.0, 3.0, 24.0, round(rng.uniform(0.5, 24.0), 2)]),
+            coast_confidence=rng.choice([2.0, 2.0, 0.0, 1.0, round(rng.uniform(0.0, 3.0), 2)]),
+            coast_learning_band=rng.choice([1.0, 1.0, 0.0, round(rng.uniform(0.0, 2.0), 2)]),
+            coast_comfort_band=rng.choice([1.0, 1.0, 0.0, round(rng.uniform(0.0, 2.0), 2)]),
+            coast_bridge_only=rng.random() < 0.6,
+            coast_learning_hold_seconds=rng.choice([7200.0, 7200.0, 0.0, round(rng.uniform(0.0, 14400.0), 1)]),
+            coast_learning_hold_max_seconds=rng.choice([21600.0, 21600.0, 0.0, round(rng.uniform(0.0, 43200.0), 1)]),
+            coast_learning_cell_hours=rng.choice([6.0, 6.0, 0.0, round(rng.uniform(0.0, 12.0), 2)]),
+            coast_unknown_reach=rng.choice([1.0, 1.0, 0.0, -1.0, round(rng.uniform(0.01, 5.0), 3)]),
+            coast_min_hours=rng.choice([48.0, 48.0, 48.0, 0.0, 12.0, 24.0, 600.0, round(rng.uniform(0.0, 700.0), 1)])
+            if house not in ("lard", "brus") or rng.random() < 0.15 else 48.0,
+            shunt_lead_seconds=rng.choice([600.0, 600.0, 60.0, 0.0, 7200.0, 36000.0, round(rng.uniform(0.0, 20000.0), 1)]),
+            coast_hysteresis_seconds=rng.choice([900.0, 900.0, 0.0, round(rng.uniform(0.0, 3600.0), 1)]),
+            heat_source_off_delay=rng.choice([1800.0, 1800.0, 0.0, round(rng.uniform(0.0, 7200.0), 1)]),
+            room_target=rng.choice([21.0, 21.0, temperature(19.0, 23.0)]),
+        )
+
+    counts, rows, redrawn = {}, [], 0
+    weights = ["lard"] * 6 + ["brus"] * 4 + ["kort", "halv", "halv3", "varm", "varm", "ny"]
+    while len(rows) < 800:
+        # En fjärdedel är en nedvärmning som kan börja: ett lärt hus i värme, på målet eller över,
+        # milt väder - så att väntan på kurvtabellen och starten får många rader.
+        setback = rng.random() < 0.25
+        name = rng.choice(["lard", "lard", "brus"]) if setback else rng.choice(weights)
+        house = houses[name]
+        tuning_kw = coast_tuning(name)
+        burner_lead = rng.choice([1800.0, 1800.0, 300.0, 0.0, round(rng.uniform(0.0, 3600.0), 1)])
+        coasting = rng.random() < 0.35
+        outdoor = maybe(temperature(-20.0, 12.0), 0.12)
+        if setback:
+            tuning_kw.update(coast_enabled=True, coast_min_hours=48.0,
+                             shunt_lead_seconds=rng.choice([600.0, 600.0, 60.0, 1800.0]))
+            coasting, outdoor = rng.random() < 0.1, temperature(0.0, 14.0)
+        hour = an_hour()
+        entries = table_ops(outdoor, hour, tuning_kw["coast_learning_cell_hours"])
+        target = tuning_kw["room_target"]
+        indoor = maybe(rng.choice([target, target, round(target + rng.uniform(0.0, 2.0), 2),
+                                   round(target + rng.uniform(0.0, 2.0), 2), round(target - rng.uniform(0.0, 1.5), 2),
+                                   temperature(15.0, 26.0)]), 0.06)
+        mode = rng.choice(coast_modes)
+        kind, forecast = a_forecast(outdoor, tuning_kw["coast_horizon_hours"])
+        if setback:
+            indoor = rng.choice([target, round(target + rng.uniform(0.0, 1.5), 2)])
+            mode = c.MODE_HEATING if rng.random() < 0.9 else mode
+            while kind in ("empty", "beyond_only"):
+                kind, forecast = a_forecast(outdoor, tuning_kw["coast_horizon_hours"])
+        dt = a_dt()
+
+        made_loop = c.HeatingController(m.Tuning(**tuning_kw), m.LearnedState(), house=house)
+        made_loop.burner_lead_seconds(burner_lead)
+        made_loop.points = a_table(entries)
+        state = made_loop.state
+        hold_seconds, hold_cell, hold_base = hold_before(outdoor, hour, tuning_kw, made_loop.points)
+        state.coasting = coasting
+        state.seconds_learning_hold, state.learning_hold_cell, state.learning_hold_base = hold_seconds, hold_cell, hold_base
+        state.outdoor.value = outdoor
+        out = m.ControlOutput()
+        made_loop._out = out
+        seen = []
+        house.outlook = lambda **kw: seen.append(th.HouseModel.outlook(house, **kw)) or seen[-1]
+        try:
+            result = made_loop._coast(m.ControlInputs(dt=dt, hour=hour, forecast=forecast), indoor, mode, out)
+        finally:
+            del house.outlook
+        if seen and out.coast_shunt_threshold is not None:
+            held = float("inf") if seen[0].holds else (seen[0].hours or 0.0)
+            if abs(held - out.coast_shunt_threshold) < 1e-5 or abs(held - out.coast_burner_threshold) < 1e-5:
+                redrawn += 1
+                continue
+
+        if not tuning_kw["coast_enabled"]:
+            branch(counts, "early_disabled")
+        elif indoor is None:
+            branch(counts, "early_no_indoor")
+        elif not forecast:
+            branch(counts, "early_no_forecast")
+        elif not any(h <= tuning_kw["coast_horizon_hours"] for h, _ in forecast):
+            branch(counts, f"beyond_horizon_only_coasting_{str(coasting).lower()}")
+        elif out.coast_trust:
+            branch(counts, "distrust_" + {"för lite data": "little", "": "",
+                                          "för lite varierad data för att lita på modellen än": "varied"}.get(
+                out.coast_trust, "hours") + f"_coasting_{str(coasting).lower()}")
+        else:
+            branch(counts, "trusted")
+            if out.coast_reach is None:
+                branch(counts, "reach_none")
+            elif tuning_kw["coast_unknown_reach"] <= 0.0:
+                branch(counts, "allowance_zero_unknown_reach")
+            if not out.coast_known:
+                branch(counts, "unknown")
+            else:
+                branch(counts, f"shunt_{str(out.coast_shunt).lower()}_burner_{str(out.coast_burner).lower()}")
+                if seen[0].holds:
+                    branch(counts, "holds")
+                if tuning_kw["coast_bridge_only"] and out.coast_turn_hours is None:
+                    branch(counts, "bridge_only_flat")
+                if tuning_kw["coast_hysteresis_seconds"] == 0.0:
+                    branch(counts, "hysteresis_zero")
+                if kind == "beyond":
+                    branch(counts, "beyond_dropped")
+                if mode != c.MODE_HEATING:
+                    branch(counts, "not_heating")
+                elif coasting:
+                    branch(counts, f"carried_{str(state.coasting).lower()}")
+                elif indoor < target:
+                    branch(counts, "below_target")
+                elif "learning_hold" in out.flags:
+                    branch(counts, "learning_hold_held")
+                elif out.coast_shunt:
+                    branch(counts, "coast_started" if state.coasting else "?")
+                    if outdoor is not None and tuning_kw["coast_learning_hold_seconds"] > 0.0:
+                        branch(counts, "learning_hold_passed")
+                else:
+                    branch(counts, "no_shunt")
+        rows.append([name, _stored(dict(tuning_kw)), burner_lead, _bool(coasting), hold_seconds, hold_cell, hold_base,
+                     outdoor, table_cell(entries), indoor, mode, _slots(forecast), hour, dt, result,
+                     _bool(state.coasting), state.seconds_learning_hold, state.learning_hold_cell,
+                     state.learning_hold_base, "|".join(out.flags), out.coast_trust, out.coast_uncertainty,
+                     out.coast_reach, out.coast_allowance, out.coast_margin, _bool(out.coast_known), out.coast_hours,
+                     out.coast_shunt_threshold, out.coast_turn_hours, _bool(out.coast_shunt),
+                     out.coast_burner_threshold, _bool(out.coast_burner), out.coast_learning_hold])
+    write(step, "coast.csv", ["house", "tuning", "burner_lead", "coasting_before", "hold_seconds_before",
+                              "hold_cell_before", "hold_base_before", "outdoor_filtered", "table", "indoor", "mode",
+                              "forecast", "hour", "dt", "result", "coasting_after", "hold_seconds_after",
+                              "hold_cell_after", "hold_base_after", "flags", "coast_trust", "coast_uncertainty",
+                              "coast_reach", "coast_allowance", "coast_margin", "coast_known", "coast_hours",
+                              "coast_shunt_threshold", "coast_turn_hours", "coast_shunt", "coast_burner_threshold",
+                              "coast_burner", "coast_learning_hold"], rows)
+    show("coast.csv", counts)
+    print(f"{step}/coast.csv: {redrawn} omkastade nära en tröskel")
+
+    # --- _distrust: alla hus mot gränser kring deras timmar.
+    rows = []
+    for name in names:
+        for needed in (48.0, 47.5, 48.5, 0.0, 12.0, 12.5, 13.0, 13.5, 24.0, 600.0, 600.5, 1000.0):
+            made_loop = c.HeatingController(m.Tuning(coast_min_hours=needed), m.LearnedState(), house=houses[name])
+            rows.append([name, needed, made_loop._distrust()])
+    write(step, "distrust.csv", ["house", "coast_min_hours", "result"], rows)
+
+    # --- _night
+    fixed = [
+        # (start, end, after_sun, since_sun, hour, elevation)
+        (22.0, 6.0, 7200.0, 7200.0, 22.0, 0.0), (22.0, 6.0, 7200.0, 7200.0, 21.99, 0.0),
+        (22.0, 6.0, 7200.0, 7200.0, 5.99, 0.0), (22.0, 6.0, 7200.0, 7200.0, 6.0, 0.0),
+        (22.0, 6.0, 7200.0, 7199.0, 23.0, 0.0), (22.0, 6.0, 7200.0, 7200.0, 23.0, 0.01),
+        (22.0, 6.0, 7200.0, 1e6, -1.0, -10.0), (22.0, 6.0, 7200.0, 1e6, 25.0, -10.0),
+        (22.0, 6.0, 7200.0, 1e6, 46.0, -10.0), (22.0, 6.0, 7200.0, 1e6, None, -10.0),
+        (22.0, 6.0, 7200.0, 1e6, 23.0, None), (1.0, 5.0, 7200.0, 1e6, 1.0, -5.0), (1.0, 5.0, 7200.0, 1e6, 5.0, -5.0),
+        (1.0, 5.0, 7200.0, 1e6, 0.99, -5.0), (3.0, 3.0, 7200.0, 1e6, 3.0, -5.0), (3.0, 3.0, 7200.0, 1e6, 2.0, -5.0),
+        (22.0, 6.0, 0.0, 0.0, 0.0, 0.0), (22.0, 6.0, 7200.0, 1e6, -0.01, -1.0), (22.0, 6.0, 7200.0, 1e6, 24.0, -1.0),
+    ]
+    counts, rows = {}, []
+    for i in range(400):
+        if i < len(fixed):
+            start, end, after_sun, since_sun, hour, elevation = fixed[i]
+        else:
+            start = rng.choice([22.0, 22.0, 0.0, 6.0, round(rng.uniform(0.0, 24.0), 2)])
+            end = rng.choice([6.0, 6.0, start, 24.0, round(rng.uniform(0.0, 24.0), 2)])
+            after_sun = rng.choice([7200.0, 7200.0, 0.0, round(rng.uniform(0.0, 20000.0), 1)])
+            since_sun = rng.choice([1e6, after_sun, after_sun, after_sun - 30.0, 0.0, round(rng.uniform(0.0, 20000.0), 1)])
+            hour = maybe(rng.choice([start, end, round(start - 0.01, 2), round(end - 0.01, 2), 23.0,
+                                     round(rng.uniform(0.0, 24.0), 2), round(rng.uniform(0.0, 24.0), 2),
+                                     round(rng.uniform(-48.0, 72.0), 2), 24.0, -1.0]), 0.1)
+            elevation = maybe(rng.choice([0.0, 0.01, -0.01, -10.0, round(rng.uniform(-30.0, 50.0), 2)]), 0.1)
+        made_loop = c.HeatingController(m.Tuning(night_start_hour=start, night_end_hour=end,
+                                                 learn_after_sun_seconds=after_sun), m.LearnedState())
+        made_loop.state.seconds_since_sun = since_sun
+        result = made_loop._night(m.ControlInputs(dt=30.0, hour=hour, sun_elevation=elevation))
+        if hour is None or elevation is None:
+            branch(counts, "unknown")
+        else:
+            branch(counts, ("wraps" if start > end else "same" if start == end else "within") + f"_{str(result).lower()}")
+            if not 0.0 <= hour < 24.0:
+                branch(counts, "hour_outside_day")
+        rows.append([start, end, after_sun, since_sun, hour, elevation, _bool(result)])
+    write(step, "night.csv", ["night_start_hour", "night_end_hour", "learn_after_sun_seconds", "seconds_since_sun",
+                              "hour", "sun_elevation", "result"], rows)
+    show("night.csv", counts)
+
+    # --- _conditions
+    rows = []
+    for i in range(300):
+        outdoor = maybe(temperature(-30.0, 30.0), 0.15)
+        wind = maybe(round(rng.uniform(0.0, 15.0), 1))
+        bearing = maybe(round(rng.uniform(0.0, 360.0), 1))
+        elevation = maybe(rng.choice([round(rng.uniform(-20.0, 60.0), 2), 0.0, -5.0, 30.0]))
+        cloud = maybe(rng.choice([round(rng.uniform(0.0, 100.0), 1), 0.0, 100.0, 50.0]))
+        sunlight = maybe(rng.choice([round(rng.uniform(0.0, 1.0), 3), round(rng.uniform(0.0, 1.0), 3), -0.2,
+                                     float("nan"), float("inf"), 0.0]), 0.45)
+        hour = maybe(round(rng.uniform(0.0, 24.0), 2))
+        got = core.controller.HeatingController(m.Tuning(), m.LearnedState())._conditions(
+            m.ControlInputs(dt=30.0, outdoor=outdoor, wind=wind, wind_bearing=bearing, sun_elevation=elevation,
+                            cloud=cloud, sunlight=sunlight, hour=hour))
+        answer = [None] * 5 if got is None else [got.outdoor, got.wind, got.bearing, got.sun, got.hour]
+        rows.append([outdoor, wind, bearing, elevation, cloud, sunlight, hour, _bool(got is not None)] + answer)
+    write(step, "conditions.csv", ["outdoor", "wind", "wind_bearing", "sun_elevation", "cloud", "sunlight", "hour",
+                                   "given", "c_outdoor", "c_wind", "c_bearing", "c_sun", "c_hour"], rows)
+
+    # --- _observe_house: följder av cykler på ett färskt hus.
+    counts, rows = {}, []
+    for _ in range(300):
+        tuning_kw = dict(
+            thermal_sample_seconds=rng.choice([600.0, 600.0, 1800.0, 300.0, 30.0, round(rng.uniform(30.0, 3600.0), 1)]),
+            night_start_hour=rng.choice([22.0, 22.0, round(rng.uniform(0.0, 24.0), 2)]),
+            night_end_hour=rng.choice([6.0, 6.0, round(rng.uniform(0.0, 24.0), 2)]),
+            learn_after_sun_seconds=rng.choice([7200.0, 7200.0, 0.0, round(rng.uniform(0.0, 20000.0), 1)]),
+        )
+        since_sun = rng.choice([1e6, 1e6, 0.0, tuning_kw["learn_after_sun_seconds"], round(rng.uniform(0.0, 20000.0), 1)])
+        made_loop = c.HeatingController(m.Tuning(**tuning_kw), m.LearnedState())
+        made_loop.state.seconds_since_sun = since_sun
+        sample = tuning_kw["thermal_sample_seconds"]
+        dt = rng.choice([sample, sample, sample, sample / 2.0, 30.0, round(rng.uniform(1.0, 2.0 * sample), 1)])
+        night = rng.random() < 0.3
+        indoor0, outdoor0 = temperature(17.0, 24.0), temperature(-20.0, 15.0)
+        cycles, learned = [], []
+        for k in range(rng.randint(1, 12)):
+            this_dt = dt if rng.random() < 0.85 else rng.choice([0.0, 30.0, round(rng.uniform(1.0, 3600.0), 1)])
+            indoor = maybe(round(indoor0 + rng.uniform(-0.5, 0.5), 2), 0.1)
+            outdoor = maybe(round(outdoor0 + rng.uniform(-1.0, 1.0), 1), 0.1)
+            ret = maybe(temperature(20.0, 50.0), 0.4)
+            flow = None if ret is None and rng.random() < 0.8 else maybe(round((ret or 30.0) + rng.uniform(-2.0, 20.0), 2), 0.1)
+            fields = dict(
+                flow=flow, ret=ret, outdoor=outdoor, wind=maybe(round(rng.uniform(0.0, 12.0), 1)),
+                wind_bearing=maybe(round(rng.uniform(0.0, 360.0), 1)),
+                sun_elevation=-10.0 if night else maybe(round(rng.uniform(-20.0, 50.0), 2)),
+                cloud=maybe(round(rng.uniform(0.0, 100.0), 1)),
+                sunlight=maybe(round(rng.uniform(0.0, 0.8), 3), 0.6),
+                hour=23.0 if night else maybe(round(rng.uniform(0.0, 24.0), 2)),
+            )
+            delta = maybe(round(rng.uniform(0.0, 15.0), 2), 0.15)
+            made_loop._out = m.ControlOutput()
+            made_loop._observe_house(m.ControlInputs(dt=this_dt, **fields), indoor, delta, this_dt)
+            learning, why, value = made_loop._out.learning[c.LEARN_HOUSE]
+            branch(counts, f"learning_{str(learning).lower()}" + (f"_{why}" if why else ""))
+            if made_loop._night(m.ControlInputs(dt=this_dt, **fields)):
+                branch(counts, "night")
+            if indoor is not None and c.radiator_excess(flow, ret, indoor) is not None:
+                branch(counts, "radiators")
+            cycles.append(":".join(_num(v) for v in list(fields.values()) + [indoor, delta, this_dt]))
+            learned.append(",".join([_bool(learning), why, _num(value)]))
+        house = made_loop.house
+        branch(counts, "took_samples" if house.fit.weight > 0.0 else "no_samples")
+        rows.append([_stored(dict(tuning_kw)), since_sun, "/".join(cycles), "/".join(learned), house.observed_hours,
+                     house.last_indoor, house.seconds_since_sample, house.fit.weight])
+    write(step, "observe_house.csv", ["tuning", "seconds_since_sun", "cycles", "learning", "observed_hours",
+                                      "last_indoor", "seconds_since_sample", "fit_weight"], rows)
+    show("observe_house.csv", counts)
+
+    # --- _learning_hold
+    fixed = [
+        # (tuning, outdoor, seconds, cell, base, entries, hour, dt); None som cell = ingen ännu,
+        # "same" = cellen (ute, klocka) hamnar i
+        ((7200.0, 21600.0, 6.0), None, 0.0, None, 0.0, [], 12.0, 30.0),
+        ((7200.0, 21600.0, 6.0), -5.0, 0.0, None, 0.0, [(-5.0, 10.0, None, 12.0, 6.0)], 12.0, 30.0),
+        ((7200.0, 21600.0, 6.0), -5.0, 0.0, None, 0.0, [(-5.0, 10.0, None, 12.0, 5.5)], 12.0, 30.0),
+        ((7200.0, 21600.0, 6.0), -5.0, 21600.0, "same", 0.0, [], 12.0, 30.0),
+        ((7200.0, 21600.0, 6.0), -5.0, 21570.0, "same", 0.0, [], 12.0, 30.0),
+        ((7200.0, 21600.0, 6.0), -5.0, 100.0, "same", 1.0, [(-5.0, 10.0, None, 12.0, 1.5), (-5.0, 9.0, 2.0, 12.0, 1.5)],
+         12.0, 30.0),
+        ((7200.0, 21600.0, 6.0), -5.0, 100.0, "same", 1.5, [(-5.0, 10.0, None, 12.0, 1.5), (-5.0, 9.0, 2.0, 12.0, 1.5)],
+         12.0, 30.0),
+        ((7200.0, 21600.0, 6.0), -5.0, 100.0, "other", 1.0, [(-5.0, 10.0, None, 12.0, 3.0)], 12.0, 30.0),
+        ((7200.0, 21600.0, 6.0), -5.0, 100.0, "same", 0.0, [], 12.0, -30.0),
+        ((7200.0, 21600.0, 6.0), -5.0, 0.0, None, 0.0, [], None, 30.0),
+        ((0.0, 21600.0, 6.0), -5.0, 0.0, None, 0.0, [], 12.0, 30.0),
+    ]
+    counts, rows = {}, []
+    for i in range(500):
+        if i < len(fixed):
+            (hold, top, cell_hours), outdoor, seconds, cell, base, entries, hour, dt = fixed[i]
+            tuning_kw = dict(coast_learning_hold_seconds=hold, coast_learning_hold_max_seconds=top,
+                             coast_learning_cell_hours=cell_hours)
+            made_loop = c.HeatingController(m.Tuning(**tuning_kw), m.LearnedState())
+            made_loop.points = a_table(entries)
+            if cell == "same":
+                cell = made_loop.points.key_at(outdoor, hour)
+            elif cell == "other":
+                cell = made_loop.points.key_at(outdoor + 10.0, hour)
+        else:
+            tuning_kw = dict(
+                coast_learning_hold_seconds=rng.choice([7200.0, 7200.0, 0.0, round(rng.uniform(0.0, 14400.0), 1)]),
+                coast_learning_hold_max_seconds=rng.choice([21600.0, 21600.0, 0.0, round(rng.uniform(0.0, 43200.0), 1)]),
+                coast_learning_cell_hours=rng.choice([6.0, 6.0, 0.0, round(rng.uniform(0.0, 12.0), 2)]),
+            )
+            outdoor = maybe(temperature(-20.0, 12.0), 0.1)
+            hour = an_hour()
+            dt = a_dt()
+            entries = table_ops(outdoor, hour, tuning_kw["coast_learning_cell_hours"])
+            made_loop = c.HeatingController(m.Tuning(**tuning_kw), m.LearnedState())
+            made_loop.points = a_table(entries)
+            seconds, cell, base = hold_before(outdoor, hour, tuning_kw, made_loop.points)
+        state = made_loop.state
+        state.outdoor.value = outdoor
+        state.seconds_learning_hold, state.learning_hold_cell, state.learning_hold_base = seconds, cell, base
+        out = m.ControlOutput()
+        made_loop._out = out
+        result = made_loop._learning_hold(m.ControlInputs(dt=dt, hour=hour), out)
+        if outdoor is None:
+            branch(counts, "no_outdoor")
+        else:
+            hours = made_loop.points.hours_at(outdoor, hour)
+            if hours >= tuning_kw["coast_learning_cell_hours"]:
+                branch(counts, "cell_full")
+            elif seconds >= tuning_kw["coast_learning_hold_max_seconds"]:
+                branch(counts, "max_reached" + ("_exact" if seconds == tuning_kw["coast_learning_hold_max_seconds"] else ""))
+            else:
+                branch(counts, "same_cell" if cell == made_loop.points.key_at(outdoor, hour) else "new_cell")
+                left = tuning_kw["coast_learning_hold_seconds"] - (hours - state.learning_hold_base) * 3600.0
+                if left == 0.0:
+                    branch(counts, "left_zero")
+                branch(counts, f"held_{str(result).lower()}" + ("_negative_dt" if result and dt < 0.0 else ""))
+        rows.append([_stored(dict(tuning_kw)), outdoor, seconds, cell, base, table_cell(entries), hour, dt, _bool(result),
+                     state.seconds_learning_hold, state.learning_hold_cell, state.learning_hold_base,
+                     out.coast_learning_hold, "|".join(out.flags)])
+    write(step, "learning_hold.csv", ["tuning", "outdoor_filtered", "hold_seconds_before", "hold_cell_before",
+                                      "hold_base_before", "table", "hour", "dt", "result", "hold_seconds_after",
+                                      "hold_cell_after", "hold_base_after", "coast_learning_hold", "flags"], rows)
+    show("learning_hold.csv", counts)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -2924,6 +3405,7 @@ def main() -> int:
     cycle_start(core, rng)
     delta_and_radiators(core, rng)
     mode_and_heat_source(core, rng)
+    rollout(core, rng)
     for step, *modules in (("01-tider", "durations"), ("02-pid", "pid"), ("03-kurvan", "curve"),
                            ("04-ventilkartan", "valvemap"), ("05-kurvtabellen", "points"),
                            ("06-skattarna", "estimators"), ("07-husmodellen", "thermal"),
@@ -2932,7 +3414,8 @@ def main() -> int:
                            ("12-grunden", "controller", "texts"),
                            ("13-ute-inne-kurvan", "controller"),
                            ("14-deltat-radiatorvakten", "controller"),
-                           ("15-laget-varmekallan", "controller")):
+                           ("15-laget-varmekallan", "controller"),
+                           ("16-utrullningen", "controller")):
         for module in modules:
             copy_source(heating, step, module)
     return 0
